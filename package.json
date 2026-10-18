@@ -1,0 +1,21 @@
+{
+  "name": "tarok",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "pnpm -r --if-present test",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "sim": "tsx tools/simulate.ts"
+  },
+  "devDependencies": {
+    "fast-check": "^3.22.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8",
+    "tsx": "^4.19.2"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}
