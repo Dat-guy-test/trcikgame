@@ -32,6 +32,7 @@
   /* Overlap so 12-15 cards fit on a phone; the strip scrolls if they still do not. */
   .slot { margin-left: -1.45rem; flex: none; }
   .hand.sm .slot { margin-left: -1.2rem; }
+  @media (min-width: 900px) { .slot { margin-left: -0.9rem; } .hand.sm .slot { margin-left: -0.8rem; } }
   .hand:not(.sm) { justify-content: safe center; }
   .hand:not(.sm) .slot:first-child { margin-left: 0; }
 </style>

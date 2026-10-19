@@ -7,6 +7,7 @@
   import ResultDialog from '../components/ResultDialog.svelte';
   import Scoreboard from '../components/Scoreboard.svelte';
   import Seat from '../components/Seat.svelte';
+  import TalonDisplay from '../components/TalonDisplay.svelte';
   import TrickArea from '../components/TrickArea.svelte';
   import { suitName } from '../lib/cardUi';
   import { Game } from '../lib/game.svelte';
@@ -35,11 +36,20 @@
   const bottomCards = $derived(v.seat === null ? [] : (r.hands[bottomSeat] ?? []));
   const activeSeat = $derived(r.phase === 'play' ? playSeat : r.expectedActor);
 
+  /**
+   * Cards the human has picked (a card to play, cards to discard or take). It survives clock ticks and bot moves and is only
+   * cleared when the situation really changes (key below) or when the player taps away from the cards and buttons.
+   * The key is a string so that rebuilding the view every tick does not count as a change.
+   */
   let selected = $state<number[]>([]);
+  const situation = $derived(`${r.phase}|${v.stage}|${r.tricks.length}|${r.trick.length}|${r.expectedActor}`);
   $effect(() => {
-    void r.phase; void r.trick.length; void v.stage; void r.tricks.length;
+    void situation;
     untrack(() => (selected = []));
   });
+  function tapAway(e: MouseEvent): void {
+    if (selected.length > 0 && !(e.target as Element).closest('button, input, select, a, [data-keep]')) selected = [];
+  }
 
   const playable = $derived.by(() => {
     if (!mine) return null;
@@ -74,7 +84,8 @@
   let confirmLeave = $state(false);
 </script>
 
-<div class="game" data-testid="game" data-stage={v.stage} data-phase={r.phase}>
+<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+<div class="game" data-testid="game" data-stage={v.stage} data-phase={r.phase} onclick={tapAway}>
   <header class="top">
     <div class="round">
       {t('game.round', { n: v.roundsPlayed + 1 })}{#if roundsTotal !== null}<small> / {roundsTotal}</small>{/if}
@@ -109,6 +120,9 @@
       </div>
     {/each}
     <div class="area center">
+      {#if r.talon.revealed && r.talon.piles}
+        <TalonDisplay piles={r.talon.piles} taken={r.talonTaken} open={r.phase !== 'play'} />
+      {/if}
       <TrickArea plays={shownTrick} {mySeat} winner={game.hold?.winner ?? null} />
     </div>
   </main>
@@ -156,7 +170,7 @@
   .buttons { display: flex; gap: 0.35rem; }
   .banner { margin: 0; padding: 0.25rem; text-align: center; background: var(--accent); color: #1b1b1f; font-size: 0.8rem; }
   .table { display: grid; grid-template-columns: minmax(4.5rem, 1fr) minmax(0, 2.2fr) minmax(4.5rem, 1fr); grid-template-areas: 'top top top' 'left center right'; gap: 0.4rem; padding: 0.5rem; min-height: 0; overflow-y: auto; align-content: start; }
-  .a2 { grid-area: top; } .a1 { grid-area: left; } .a3 { grid-area: right; } .center { grid-area: center; display: grid; place-items: center; }
+  .a2 { grid-area: top; } .a1 { grid-area: left; } .a3 { grid-area: right; } .center { grid-area: center; display: grid; gap: 0.5rem; place-items: center; align-content: start; }
   .bottom { display: grid; gap: 0.35rem; padding: 0.4rem 0.4rem 0.2rem; background: linear-gradient(transparent, #0005); }
   .me { display: grid; gap: 0.2rem; }
   .control { margin: 0; text-align: center; font-size: 0.8rem; color: var(--accent); }

@@ -1,7 +1,7 @@
 # Tarok website: Plan and progress
 
 Merges the original `Plan.txt` with the progress made so far. Rules live in `rules.md`.
-Last updated after milestone 5 (placeholder web UI).
+Last updated after milestone 5 (placeholder web UI, first fixes from real-device testing).
 
 **Goals:** unbloated, as smooth as possible, perfectly mobile compatible.
 **Features:** main menu (name, options, rules + PDF, local game, online game, language switch), configurable
@@ -166,8 +166,8 @@ protocol (short keys, MessagePack later if needed).
   Valat), settlement, give-up, forfeit, Trischaken.
 - Dummies: seats with controllers (declarer / previous trick winner / first regular opponent), skipped in bidding and in starting-player
   rotation; 3 players + 1 dummy works. (The 2-player variant followed in milestone 3.)
-- `view.ts`: `viewFor(state, seat)` hides other hands, the unrevealed Talon and other players' discards; reveals dummy hands after bidding and
-  all hands in Ouvert after trick 1.
+- `view.ts`: `viewFor(state, seat)` hides other hands, the unrevealed Talon and other players' discards; reveals dummy hands when play starts
+  (after the Talon stage) and all hands in Ouvert after trick 1.
 - `clock.ts`: pure timer helpers (`clockKind`, banks, `bankExpiryOutcome`: forfeit for a 1v3 declarer, otherwise 10 s grace then a random
   legal move) and the licitation `timeoutAction`.
 - Random legal-move bot and `sim.ts` invariants: all 54 cards conserved at every step, standings sum to zero, counted points total 70,
@@ -266,6 +266,18 @@ protocol (short keys, MessagePack later if needed).
   (the code follows the mobile rules in section 6: dvh, safe areas, 44 px targets, tap-to-select, reduced motion).
 - Known placeholder shortcuts: cards are CSS and text (swap `Card.svelte`); one human only (no hot-seat); no animation beyond a trick pause; the bots always
   use the heuristic strategy; PWA, Wake Lock and the PDF are not done.
+
+### Fixes after the first test on real devices
+- **Selection no longer vanishes.** The selected card(s) were cleared on every 250 ms clock tick (the view object is rebuilt each tick, and an effect depended on
+  it). The selection now only resets when the situation really changes (phase, trick, whose turn) or when you tap away from the cards and buttons. A Play
+  button was added next to tap-again-to-play. Two UI tests reproduce the old bug (they fail without the fix): selection survives ticks, discard selection survives.
+- **Card size scales with the screen:** the root font size grows from 16 px on phones up to 30 px on large monitors (limited by window height), and cards and UI
+  are sized in rem, so phones are unchanged.
+- **Talon is public.** The round view gained `talonTaken` (the cards the declarer took; empty for Solo-type contracts, `null` before the take). The table
+  shows the revealed Talon to everybody, with the taken cards highlighted and the defenders' pile dimmed (collapsible during play).
+- **Dummy hands open when play starts** (after the declarer's take and discard, or immediately when there is no Talon stage), no longer when bidding ends.
+  `rules.md` section 9 was updated.
+- Tests: engine 147, ai 12, web 9. Typecheck clean.
 
 ---
 

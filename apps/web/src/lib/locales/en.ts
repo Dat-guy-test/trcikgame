@@ -17,6 +17,7 @@ const en = {
   'action.ready': 'Ready',
   'action.nextRound': 'Next round',
   'action.again': 'Play again',
+  'action.play': 'Play',
 
   'setup.title': 'New local game',
   'setup.players': 'Players',
@@ -69,6 +70,9 @@ const en = {
   'role.partner': 'partner',
   'role.starter': 'starts',
   'role.dummy': 'Dummy',
+  'talon.title': 'Talon',
+  'talon.taken': 'taken by the declarer',
+  'talon.left': 'defenders’ pile',
   'seat.cards': '{n} cards',
   'seat.tricks': '{n} tricks',
 
@@ -99,7 +103,7 @@ const en = {
   'discard.info': 'Discard {n} cards worth less than 5 points.',
   'discard.suggest': 'Suggest',
   'discard.confirm': 'Discard ({n}/{total})',
-  'play.info': 'Tap a card to select it, tap it again to play.',
+  'play.info': 'Tap a card to select it, then tap it again or press Play. Tap elsewhere to deselect.',
 
   'result.title': 'Round {n} result',
   'result.final': 'Match finished',

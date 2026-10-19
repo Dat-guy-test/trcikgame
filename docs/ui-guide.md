@@ -57,6 +57,7 @@ For a game with one human, set `controllers[me] = 'human'` and the rest `'bot'`.
 | Hand (tap a card to select, tap again to play) | `view.legalActions` filtered to `type: 'play'` (gray out the rest) | `act({type:'play', card})` |
 | Bidding sheet | `legalActions` with `type: 'bid' / 'pass' / 'confirm'`; show `round.currentBid`, `bidder` | `act(action)` |
 | Declaration, contra, king call, king in Talon | the matching `legalActions` (`declare`, `contra` / `noContra`, `callKing`, `kingInTalon`) | `act(action)` |
+| Talon (everybody) | `round.talon.piles`, `round.talonTaken` (what the declarer took) | nothing |
 | Talon take | `round.talon.piles` and the `take` actions (each one is a valid set of cards) | `act({type:'take', cards})` |
 | Discard | `round.hands[seat]`, `round.take`; check a selection with `isValidDiscardView(view.round, cards)`; the one action in `legalActions` is a suggestion | `act({type:'discard', cards})` |
 | Clocks | `view.timers`: `viewMsLeft`, `decisionMsLeft`, `banksMs`, `graceMsLeft`, `actingParticipant`, `matchMsLeft` | `ready()` during `stage === 'viewing'` |
@@ -72,7 +73,7 @@ Rules of thumb:
 - `stage` drives which screen is on top: `viewing` (cards + ready button + shared timer), `playing`, `betweenRounds`
   (result dialog), `finished`.
 - A spectator (`view.seat === null`) gets the same view with no hands and no `legalActions`.
-- Dummy hands are in `view.round.hands` once bidding is over. When the local human controls a dummy, the dummy's turn shows up
+- Dummy hands are in `view.round.hands` once play starts (after the Talon stage). When the local human controls a dummy, the dummy's turn shows up
   in `legalActions` (the actor is the controller), so the hand component should offer the cards of
   `(leader + trick.length) % 4`, not only the human's own seat.
 

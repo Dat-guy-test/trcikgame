@@ -27,7 +27,11 @@
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; min-height: 100%; background: var(--felt); color: #f3f1ea; font: 16px/1.4 var(--font); -webkit-tap-highlight-color: transparent; }
+/* Everything is sized in rem, so scaling the root scales cards and UI together: unchanged on phones (16px),
+   larger on laptops and big monitors (up to 30px), limited by the window height so the table still fits. */
+html { font-size: clamp(16px, min(0.9vw + 8px, 1.5vh + 8px), 30px); }
+html, body { margin: 0; min-height: 100%; background: var(--felt); color: #f3f1ea; font-family: var(--font); line-height: 1.4; -webkit-tap-highlight-color: transparent; }
+body { font-size: 1rem; }
 body { overscroll-behavior: none; }
 h1, h2 { line-height: 1.15; }
 

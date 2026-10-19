@@ -19,6 +19,7 @@ const pl: Record<keyof typeof en, string> = {
   'action.ready': 'Gotowe',
   'action.nextRound': 'Następne rozdanie',
   'action.again': 'Zagraj ponownie',
+  'action.play': 'Zagraj',
 
   'setup.title': 'Nowa gra lokalna',
   'setup.players': 'Gracze',
@@ -71,6 +72,9 @@ const pl: Record<keyof typeof en, string> = {
   'role.partner': 'partner',
   'role.starter': 'zaczyna',
   'role.dummy': 'Dummy',
+  'talon.title': 'Talon',
+  'talon.taken': 'wzięte przez rozgrywającego',
+  'talon.left': 'stos obrońców',
   'seat.cards': '{n} kart',
   'seat.tricks': '{n} lew',
 
@@ -101,7 +105,7 @@ const pl: Record<keyof typeof en, string> = {
   'discard.info': 'Odrzuć {n} kart wartych mniej niż 5 punktów.',
   'discard.suggest': 'Podpowiedź',
   'discard.confirm': 'Odrzuć ({n}/{total})',
-  'play.info': 'Dotknij karty, aby ją wybrać, i dotknij ponownie, aby zagrać.',
+  'play.info': 'Dotknij karty, aby ją wybrać, potem dotknij ponownie albo naciśnij Zagraj. Dotknij gdzie indziej, aby odznaczyć.',
 
   'result.title': 'Wynik rozdania {n}',
   'result.final': 'Mecz zakończony',

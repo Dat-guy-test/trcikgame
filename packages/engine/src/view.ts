@@ -21,6 +21,8 @@ export interface RoundView {
   hands: (CardId[] | null)[];
   handSizes: number[];
   talon: { revealed: boolean; piles: CardId[][] | null };
+  /** Public: the Talon cards the declarer took (null until they have taken; empty when no card was taken). The rest went to the defenders. */
+  talonTaken: CardId[] | null;
   currentBid: Bid | null;
   bidder: number | null;
   awaitingConfirm: boolean;
@@ -46,11 +48,14 @@ export interface RoundView {
   result: RoundResult | null;
 }
 
-/** `seat` -1 gives the public view of a spectator (no hands, no secret partner). */
+/** Dummy hands are hidden until play starts. `seat` -1 gives the public view of a spectator (no hands, no secret partner). */
 export function viewFor(s: RoundState, seat: number): RoundView {
-  const afterBidding = s.phase !== 'bidding';
+  // Dummy hands become public when play starts, i.e. once the declarer is done with the Talon (take and discard, or no Talon).
+  const playStarted = s.phase === 'play' || s.phase === 'done';
   const visible = (i: number): boolean =>
-    i === seat || (afterBidding && s.config.seatKinds[i] === 'dummy') || s.ouvertRevealed;
+    i === seat || (playStarted && s.config.seatKinds[i] === 'dummy') || s.ouvertRevealed;
+  const talonTaken =
+    s.talonSeen !== null && s.talon.flat().length === 0 ? s.talonSeen.flat().filter((c) => !s.defenderExtra.includes(c)) : null;
 
   const king = s.calledKing ? suitCard(s.calledKing, 7) : null;
   const isPartner =
@@ -65,6 +70,7 @@ export function viewFor(s: RoundState, seat: number): RoundView {
     hands: s.hands.map((h, i) => (visible(i) ? [...h] : null)),
     handSizes: s.hands.map((h) => h.length),
     talon: { revealed: s.talonRevealed, piles: s.talonSeen ? s.talonSeen.map((p) => [...p]) : null },
+    talonTaken,
     currentBid: s.currentBid,
     bidder: s.bidder,
     awaitingConfirm: s.awaitingConfirm,

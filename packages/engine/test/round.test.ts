@@ -327,7 +327,7 @@ describe('dummies', () => {
     expect(nextStartingPlayer(D3, 2)).toBe(3);
   });
 
-  it('the dummy hand is hidden during bidding and public afterwards', () => {
+  it('the dummy hand is hidden until play starts and public afterwards', () => {
     const s = start(1, D3);
     expect(viewFor(s, 0).hands[1]).toBeNull();
     const after = run(s, [[0, pass], [2, pass], [3, pass]]);
@@ -430,6 +430,49 @@ describe('2 players (alternating player / dummy seats)', () => {
         s = next;
       }
     }
+  });
+});
+
+describe('Talon and dummy visibility', () => {
+  const D3: SeatKind[] = ['player', 'dummy', 'player', 'player'];
+  const toTake = (seatKinds: SeatKind[], contract: Bid['contract']) => {
+    const s = start(1, seatKinds);
+    const order = seatKinds.map((k, i) => (k === 'player' ? i : -1)).filter((i) => i >= 0 && i !== 0);
+    let t = run(s, [[0, bid(contract)], ...order.map((i): [number, Action] => [i, pass]), [0, { type: 'confirm' }]]);
+    if (t.phase === 'declare') t = step(t, 0, noDeclare);
+    if (t.phase === 'contra') t = run(t, order.map((i): [number, Action] => [i, noContra]));
+    return t;
+  };
+
+  it('everybody sees the revealed Talon and what the declarer took', () => {
+    let s = toTake(P4, 'dreier');
+    expect(viewFor(s, 2).talon.piles).toHaveLength(2);
+    expect(viewFor(s, 2).talonTaken).toBeNull();
+    const [p0, p1] = s.talon as [number[], number[]];
+    s = step(s, 0, { type: 'take', cards: p0 });
+    expect(viewFor(s, 2).talonTaken).toEqual(p0);
+    expect(viewFor(s, 3).talon.piles).toEqual([p0, p1]);
+    expect(viewFor(s, 2).discards).toBeNull();
+  });
+
+  it('with no Talon cards taken (Solodreier) the taken list is empty, and negative contracts reveal nothing', () => {
+    expect(viewFor(toTake(P4, 'solodreier'), 1).talonTaken).toEqual([]);
+    const bettel = toTake(P4, 'bettel');
+    expect(viewFor(bettel, 1).talon.piles).toBeNull();
+    expect(viewFor(bettel, 1).talonTaken).toBeNull();
+  });
+
+  it('dummy hands stay hidden through bidding and the Talon stage, and open when play starts', () => {
+    let s = toTake(D3, 'dreier');
+    expect(s.phase).toBe('take');
+    expect(viewFor(s, 2).hands[1]).toBeNull();
+    s = step(s, 0, { type: 'take', cards: s.talon[0]! });
+    expect(viewFor(s, 2).hands[1]).toBeNull();
+    const ok = legalActions(s)[0]!;
+    s = apply(s, ok.actor, ok.action);
+    expect(s.phase).toBe('play');
+    expect(viewFor(s, 2).hands[1]).toEqual(s.hands[1]);
+    expect(viewFor(toTake(D3, 'solodreier'), 3).hands[1]).toEqual(toTake(D3, 'solodreier').hands[1]); // no Talon stage: open at once
   });
 });
 

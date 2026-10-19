@@ -31,7 +31,7 @@ export function checkInvariants(s: RoundState): void {
     if (JSON.stringify(v.hands[seat]) !== JSON.stringify(s.hands[seat])) throw new Error('own hand missing from view');
     for (let other = 0; other < 4; other++) {
       const shouldSee =
-        other === seat || (s.phase !== 'bidding' && s.config.seatKinds[other] === 'dummy') || s.ouvertRevealed;
+        other === seat || ((s.phase === 'play' || s.phase === 'done') && s.config.seatKinds[other] === 'dummy') || s.ouvertRevealed;
       if (!shouldSee && v.hands[other] !== null) throw new Error(`view of seat ${seat} leaks hand ${other}`);
     }
     if (seat !== s.declarer && v.discards !== null) throw new Error('view leaks discards');

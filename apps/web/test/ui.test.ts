@@ -26,12 +26,14 @@ afterEach(() => {
 
 /** Plays a whole match through the DOM like a (not very clever) human: every control it uses is a real button. */
 const seen = new Set<string>();
-async function autoplay(maxSteps = 8000): Promise<void> {
+let talonTakenMax = 0;
+let talonShownInTake = false;
+async function autoplay(maxSteps = 8000, stopWhen?: () => boolean): Promise<void> {
   let stalls = 0;
   let round = 0;
   for (let i = 0; i < maxSteps; i++) {
     flushSync();
-    if (q('[data-testid=to-menu]')) return;
+    if (q('[data-testid=to-menu]') || stopWhen?.()) return;
     const click = (el: HTMLElement | null | undefined): boolean => {
       if (!el || (el as HTMLButtonElement).disabled) return false;
       el.click();
@@ -40,6 +42,8 @@ async function autoplay(maxSteps = 8000): Promise<void> {
     };
     const phase = q('[data-testid=game]')?.dataset.phase;
     if (phase) seen.add(phase);
+    if (phase === 'take' && q('[data-testid=talon]')) talonShownInTake = true;
+    if (phase === 'play') talonTakenMax = Math.max(talonTakenMax, qa('[data-testid=talon] [data-taken="true"]').length);
     let acted = false;
     if (q('[data-testid=next-round]')) { round++; acted = click(q('[data-testid=next-round]')); }
     else if (q('[data-testid=ready]')) acted = click(q('[data-testid=ready]'));
@@ -103,6 +107,61 @@ describe('menu and settings', () => {
   });
 });
 
+describe('selection', () => {
+  const start = async (rounds = 8) => {
+    await loadLang('en');
+    Object.assign(setup, { players: 4, winKind: 'rounds', winValue: rounds, failSafeMinutes: null, timers: false, infiniteContra: false });
+    settings.botDelay = 0;
+    render(GameScreen);
+  };
+  const selectedCards = () => qa('[data-testid=hand] button.selected');
+
+  it('a selected card stays selected (clock ticks, bot moves), until you tap away; Play button plays it', async () => {
+    await start();
+    await autoplay(8000, () => q('[data-testid=hand] button[data-playable="true"]') !== null);
+    const card = q('[data-testid=hand] button[data-playable="true"]')!;
+    const id = card.dataset.card!;
+    card.click();
+    flushSync();
+    expect(selectedCards()).toHaveLength(1);
+    await sleep(900); // more than three 250 ms clock ticks
+    flushSync();
+    expect(selectedCards()).toHaveLength(1);
+    expect((q('[data-testid=play-selected]') as HTMLButtonElement).disabled).toBe(false);
+
+    q('main.table')!.click(); // tap away
+    flushSync();
+    expect(selectedCards()).toHaveLength(0);
+
+    q(`[data-testid=hand] button[data-card="${id}"]`)!.click();
+    flushSync();
+    q('[data-testid=play-selected]')!.click();
+    flushSync();
+    expect(q(`[data-testid=hand] [data-card="${id}"]`)).toBeNull(); // the card was played
+  });
+
+  it('cards chosen for a discard stay chosen long enough to press Discard', async () => {
+    await start(12);
+    await autoplay(20000, () => q('[data-testid=suggest]') !== null);
+    expect(q('[data-testid=suggest]')).not.toBeNull();
+    const [first] = qa('[data-testid=hand] button[data-playable="true"]');
+    first!.click(); // pick one card by hand
+    flushSync();
+    await sleep(900);
+    flushSync();
+    expect(selectedCards()).toHaveLength(1);
+    q('[data-testid=suggest]')!.click(); // replaces the selection with the suggested discard
+    flushSync();
+    await sleep(900);
+    flushSync();
+    const discard = q('[data-testid=discard]') as HTMLButtonElement;
+    expect(discard.disabled).toBe(false);
+    discard.click();
+    flushSync();
+    expect(q('[data-testid=game]')!.dataset.phase).toBe('play');
+  });
+});
+
 describe('a whole match through the DOM', () => {
   const play = async (players: number, rounds: number, timers: boolean) => {
     await loadLang('en');
@@ -124,6 +183,8 @@ describe('a whole match through the DOM', () => {
   it('4 players with clocks', async () => {
     await play(4, 6, true);
     for (const p of ['bidding', 'declare', 'take', 'discard', 'play']) expect(seen, p).toContain(p);
+    expect(talonShownInTake).toBe(true);
+    expect(talonTakenMax).toBeGreaterThan(0); // everybody sees what the declarer took, bots included
     console.log('phases exercised through the DOM:', [...seen].join(', '));
   });
   it('3 players + dummy', () => play(3, 3, false));

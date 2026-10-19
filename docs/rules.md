@@ -396,7 +396,7 @@ Tarok is for four, but works with fewer players using **dummies**. More than fou
 the others swap in after each round (with more than seven, a second table is better).
 
 - A **dummy** is an extra hand with its own score, shown on the scoreboard. Dummies always pass in bidding and are never the
-  declarer. Their hand is revealed to everyone once bidding ends.
+  declarer. Their hand is revealed to everyone when play starts (after the declarer has taken from the Talon and discarded, or at once when there is no Talon stage).
 - With 3 players a dummy's cards are played by: the declarer (Rufer, Solo, Besser Rufer); the player who won the previous trick (Trischaken); or the
   declarer's first regular opponent (all other contracts). Such decisions draw on the controller's bank.
 - Dummy seats stay in a fixed place in turn order. The starting-player role skips them: if it would land on a dummy it goes to

@@ -44,8 +44,9 @@
   let valat = $state(false);
   const bonusChoices = $derived(legal.flatMap((a) => (a.type === 'declare' && a.bonuses.length === 1 ? [a.bonuses[0]!] : [])));
   const valatChoice = $derived(legal.some((a) => a.type === 'declare' && a.valat));
+  const declaring = $derived(r.phase === 'declare');
   $effect(() => {
-    if (r.phase !== 'declare') {
+    if (!declaring) {
       chosen = [];
       valat = false;
     }
@@ -209,6 +210,9 @@
       </div>
     {:else if r.phase === 'play'}
       <p class="info">{t('play.info')}</p>
+      <button class="btn primary" data-testid="play-selected" disabled={selected.length !== 1} onclick={() => send({ type: 'play', card: selected[0]! })}>
+        {t('action.play')}
+      </button>
     {/if}
   {/if}
 </div>
