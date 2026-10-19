@@ -397,13 +397,23 @@ the others swap in after each round (with more than seven, a second table is bet
 
 - A **dummy** is an extra hand with its own score, shown on the scoreboard. Dummies always pass in bidding and are never the
   declarer. Their hand is revealed to everyone once bidding ends.
-- A dummy's cards are played by: the declarer (Rufer, Solo, Besser Rufer); the player who won the previous trick (Trischaken); or the
+- With 3 players a dummy's cards are played by: the declarer (Rufer, Solo, Besser Rufer); the player who won the previous trick (Trischaken); or the
   declarer's first regular opponent (all other contracts). Such decisions draw on the controller's bank.
 - Dummy seats stay in a fixed place in turn order. The starting-player role skips them: if it would land on a dummy it goes to
   the next regular player in line.
 - When a match ends, dummies are skipped when deciding the winner and 2nd / 3rd place.
-- **3 players:** three regular players plus one dummy. The **2-player variant** (each player controls a dummy; the
-  declarer calling the other player's king reshuffles) is **not implemented yet**.
+- **3 players:** three regular players plus one dummy (seats: player, dummy, player, player).
+- **2 players:** two regular players and two dummies, seated alternately (player, dummy, player, dummy).
+  - In 1v3 contracts the player who is not the declarer controls both dummies (they are all on the opposing side).
+  - In 2v2 contracts (Rufer, Solo, Besser Rufer) the teams are revealed as soon as the king is called, and each player controls the
+    dummy that is on their team. A called king in a dummy's hand makes that dummy the declarer's partner; if the declarer holds the king,
+    or plays alone because it is in the Talon, it is a 1v3 game.
+  - If the declarer calls the king held by the *other regular player*, nothing is scored and the round is dealt again, with the same
+    starting player. Such a reshuffled deal does not count towards a round limit.
+  - In Trischaken one player controls both dummies; control passes to whoever wins a trick (a dummy winning a trick changes nothing).
+  - The starting player alternates between the two players.
+- **More than 4 players:** four sit at the table and the others spectate. After every round the player in seat `round % 4` leaves and the
+  spectator who has waited longest takes the seat; the scoreboard lists every participant. Dummies are not used.
 
 ---
 
@@ -450,4 +460,6 @@ These work as written and are easy to change.
 6. After the contract switches to Dreier from the king-in-Talon options, declared bonuses Dreier does not allow are dropped.
 7. A forfeiting declarer's declared bonuses count as lost (at their announced value) and a declared Valat as failed.
 8. When a Besser Rufer bid uses the Slovenian method, the declared bonus total must equal the current bid's.
-9. The 2-player variant is deferred.
+9. In the 2-player variant a called king held by the other player's dummy makes that dummy the declarer's partner (the declarer then controls it, and the other player controls the declarer's... other dummy). A reshuffle repeats the deal with the same starting player and is not counted as a round.
+10. With more than 4 players, the seat that is swapped out cycles through the four seats (seat `round % 4`).
+11. A target-score match with a tie at the top keeps going until one player leads alone.

@@ -5,7 +5,12 @@
   "scripts": {
     "test": "pnpm -r --if-present test",
     "typecheck": "pnpm -r --if-present typecheck",
-    "sim": "tsx tools/simulate.ts"
+    "sim": "tsx tools/simulate.ts",
+    "tournament": "tsx tools/tournament.ts",
+    "forced": "tsx tools/forced.ts",
+    "i18n": "tsx tools/check-i18n.ts",
+    "dev": "pnpm --filter @tarok/web dev",
+    "build": "pnpm --filter @tarok/web build"
   },
   "devDependencies": {
     "fast-check": "^3.22.0",

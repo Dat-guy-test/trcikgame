@@ -353,6 +353,86 @@ describe('dummies', () => {
   });
 });
 
+describe('2 players (alternating player / dummy seats)', () => {
+  const D2: SeatKind[] = ['player', 'dummy', 'player', 'dummy'];
+
+  it('only the two regular players bid', () => {
+    const s = start(1, D2);
+    expect(s.toAct).toEqual([0, 2]);
+    expect(run(s, [[0, pass], [2, pass]]).contract).toBe('trischaken');
+    expect(nextStartingPlayer(D2, 0)).toBe(2);
+    expect(nextStartingPlayer(D2, 2)).toBe(0);
+  });
+
+  const toPlay = (seed: number, declarer: number, contract: Bid['contract']) => {
+    let s = start(seed, D2, { startingPlayer: declarer });
+    const other = declarer === 0 ? 2 : 0;
+    s = run(s, [[declarer, bid(contract)], [other, pass], [declarer, { type: 'confirm' }]]);
+    return step(s, declarer, noDeclare);
+  };
+
+  it('1v3: the non-declarer controls both dummies', () => {
+    for (const declarer of [0, 2]) {
+      let s = toPlay(3, declarer, 'dreier');
+      s = run(s, [[declarer === 0 ? 2 : 0, noContra]]);
+      s = step(s, declarer, { type: 'take', cards: s.talon[0]! });
+      const ok = legalActions(s)[0]!;
+      s = apply(s, ok.actor, ok.action);
+      const other = declarer === 0 ? 2 : 0;
+      expect(controllerOf(s, 1)).toBe(other);
+      expect(controllerOf(s, 3)).toBe(other);
+    }
+  });
+
+  /** Seed where, after seat 0 bids Rufer, the king of some suit lies in `where` (a seat) and not in seat 0's hand. */
+  const findKing = (where: number) => {
+    for (let seed = 1; seed < 400; seed++) {
+      const s0 = run(start(seed, D2), [[0, bid('rufer')], [2, pass], [0, { type: 'confirm' }], [0, noDeclare]]);
+      for (const suit of SUITS) if (s0.hands[where]!.includes(suitCard(suit, 7))) return { s0, suit, where };
+    }
+    throw new Error('no seed found');
+  };
+
+  it('2v2: a dummy holding the called king is the partner at once and is controlled by the declarer', () => {
+    const { s0, suit, where } = findKing(1);
+    const s = step(s0, 0, { type: 'callKing', suit });
+    expect(s.partner).toBe(where);
+    expect(s.alone).toBe(false);
+    expect(controllerOf(s, where)).toBe(0);
+    expect(controllerOf(s, where === 1 ? 3 : 1)).toBe(2);
+    expect(viewFor(s, 2).partner).toBe(where);
+  });
+
+  it('calling the king of the other regular player reshuffles: nothing is scored', () => {
+    const { s0, suit } = findKing(2);
+    const s = step(s0, 0, { type: 'callKing', suit });
+    expect(s.phase).toBe('done');
+    expect(s.result?.kind).toBe('reshuffle');
+    expect(s.result?.deltas).toEqual([0, 0, 0, 0]);
+  });
+
+  it('Trischaken: one player controls both dummies and control follows the trick winner', () => {
+    const rng = createRng(5);
+    for (let g = 0; g < 40; g++) {
+      let s = run(start(g + 1, D2), [[0, pass], [2, pass]]);
+      while (s.phase !== 'done') {
+        const actor = expectedActor(s)!;
+        expect(D2[actor]).toBe('player');
+        const seat = (s.leader + s.trick.length) % 4;
+        if (D2[seat] === 'dummy') expect(controllerOf(s, seat)).toBe(s.trischakenController);
+        const prev = s.tricks.length;
+        const a = randomAction(s, rng);
+        const next = apply(s, a.actor, a.action);
+        if (next.tricks.length > prev) {
+          const w = next.tricks[next.tricks.length - 1]!.winner;
+          expect(next.trischakenController).toBe(D2[w] === 'player' ? w : s.trischakenController);
+        }
+        s = next;
+      }
+    }
+  });
+});
+
 describe('view projection', () => {
   it('hides other hands and the unrevealed Talon', () => {
     const s = start(5);

@@ -50,7 +50,7 @@ export interface CompletedTrick {
 }
 
 export interface RoundResult {
-  kind: 'played' | 'gaveUp' | 'forfeit' | 'trischaken';
+  kind: 'played' | 'gaveUp' | 'forfeit' | 'trischaken' | 'reshuffle';
   contract: ContractId;
   declarer: number | null;
   declarerSide: number[];

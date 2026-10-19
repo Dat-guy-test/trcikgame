@@ -14,7 +14,8 @@ const games = arg('games', 1000);
 const seed = arg('seed', 1);
 const players = arg('players', 4);
 const seatKinds: SeatKind[] =
-  players === 3 ? ['player', 'dummy', 'player', 'player'] : ['player', 'player', 'player', 'player'];
+  players === 2 ? ['player', 'dummy', 'player', 'dummy']
+  : players === 3 ? ['player', 'dummy', 'player', 'player'] : ['player', 'player', 'player', 'player'];
 
 const t0 = Date.now();
 const r = runSimulation({

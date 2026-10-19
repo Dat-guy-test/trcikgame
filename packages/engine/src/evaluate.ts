@@ -156,6 +156,19 @@ export function finishGaveUp(s: RoundState): RoundResult {
 }
 
 /**
+ * 2-player variant: the declarer called the king held by the other regular player. Nothing is scored and the
+ * round is dealt again (the match layer starts a new deal with the same starting player).
+ */
+export function finishReshuffle(s: RoundState): RoundResult {
+  const declarer = s.declarer!;
+  return {
+    kind: 'reshuffle', contract: s.contract!, declarer, declarerSide: [declarer],
+    defenderSide: [0, 1, 2, 3].filter((x) => x !== declarer), contractWon: null, counted: null, bonuses: [], valat: null,
+    declarerResult: 0, deltas: zeroDeltas(), trischaken: null,
+  };
+}
+
+/**
  * The declarer's bank ran out in a 1v3 game: the declarer loses the contract and the round ends.
  * Declared bonuses count as lost and a declared Valat counts as failed.
  */

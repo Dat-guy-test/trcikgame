@@ -9,7 +9,7 @@ import { SUITS, isTarock, points, suitCard, type CardId, type Suit } from './car
 import { deal } from './deal';
 import { outbids, outbidsOwnBid, leftBehind, type Bid } from './bidding';
 import { CONTRACTS, allowedBonuses, isNegative, valatAllowed, type ContractDef } from './contracts';
-import { finishForfeit, finishGaveUp, finishPlayed, finishTrischaken } from './evaluate';
+import { finishForfeit, finishGaveUp, finishPlayed, finishReshuffle, finishTrischaken } from './evaluate';
 import type { BonusKind } from './scoring';
 import {
   BANK_PHASES, isRegular, regularSeatsFrom,
@@ -51,11 +51,12 @@ function need<T extends Action['type']>(a: Action, t: T): Extract<Action, { type
 }
 
 const defOf = (s: RoundState): ContractDef => CONTRACTS[s.contract!];
+const regularCount = (cfg: RoundConfig): number => cfg.seatKinds.filter((k) => k === 'player').length;
 
 export function newRound(config: RoundConfig): RoundState {
   if (config.seatKinds.length !== 4) throw new Error('exactly 4 seats are required');
-  if (config.seatKinds.filter((k) => k === 'player').length < 3) {
-    throw new Error('fewer than 3 regular players is not implemented yet (2-player variant is deferred)');
+  if (config.seatKinds.filter((k) => k === 'player').length < 2) {
+    throw new Error('at least 2 regular players are required');
   }
   if (!isRegular(config, config.startingPlayer)) throw new Error('the starting player must be a regular player');
   const d = deal(config.seed);
@@ -98,6 +99,12 @@ export function controllerOf(s: RoundState, seat: number): number {
   if (isRegular(s.config, seat)) return seat;
   if (s.contract === 'trischaken') return s.trischakenController;
   const def = defOf(s);
+  if (regularCount(s.config) === 2) {
+    // 2 players: the other player controls every dummy of the opposing side. In a 1v3 game that is all of them;
+    // in a called-king game the teams are known at once and each player controls the dummy on their own team.
+    const other = regularSeatsFrom(s.config, s.declarer! + 1).find((x) => x !== s.declarer)!;
+    return def.calledKing && !s.alone && s.partner === seat ? s.declarer! : other;
+  }
   if (def.calledKing) return s.declarer!;
   // First playing opponent of the declarer.
   const first = regularSeatsFrom(s.config, s.declarer! + 1).find((x) => x !== s.declarer);
@@ -279,7 +286,19 @@ function applyKingCall(s: RoundState, action: Action): void {
   if (s.hands[s.declarer!]!.includes(king)) {
     s.alone = true;
     enterTalonStage(s);
-  } else if (s.talon.flat().includes(king)) {
+    return;
+  }
+  if (regularCount(s.config) === 2) {
+    // 2 players: teams are revealed at once. The other player's king means a reshuffle; a dummy's king makes it the partner.
+    const holder = s.hands.findIndex((h) => h.includes(king));
+    if (holder >= 0 && isRegular(s.config, holder)) {
+      s.result = finishReshuffle(s);
+      s.phase = 'done';
+      return;
+    }
+    if (holder >= 0) s.partner = holder;
+  }
+  if (s.talon.flat().includes(king)) {
     revealTalon(s);
     s.phase = 'kingInTalon';
   } else {

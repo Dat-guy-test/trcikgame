@@ -15,6 +15,8 @@ export interface RoundView {
   phase: Phase;
   seatKinds: SeatKind[];
   startingPlayer: number;
+  /** The contra chain continues past Mordkontra (x16). */
+  infiniteContra: boolean;
   /** `null` = hidden hand. Own hand, dummy hands (after bidding) and all hands in Ouvert (after trick 1) are visible. */
   hands: (CardId[] | null)[];
   handSizes: number[];
@@ -44,6 +46,7 @@ export interface RoundView {
   result: RoundResult | null;
 }
 
+/** `seat` -1 gives the public view of a spectator (no hands, no secret partner). */
 export function viewFor(s: RoundState, seat: number): RoundView {
   const afterBidding = s.phase !== 'bidding';
   const visible = (i: number): boolean =>
@@ -51,13 +54,14 @@ export function viewFor(s: RoundState, seat: number): RoundView {
 
   const king = s.calledKing ? suitCard(s.calledKing, 7) : null;
   const isPartner =
-    king !== null && seat !== s.declarer && s.phase !== 'bidding' && (s.partner === seat || s.hands[seat]!.includes(king));
+    king !== null && seat !== s.declarer && s.phase !== 'bidding' && (s.partner === seat || (s.hands[seat]?.includes(king) ?? false));
 
   return {
     seat,
     phase: s.phase,
     seatKinds: [...s.config.seatKinds],
     startingPlayer: s.config.startingPlayer,
+    infiniteContra: s.config.infiniteContra,
     hands: s.hands.map((h, i) => (visible(i) ? [...h] : null)),
     handSizes: s.hands.map((h) => h.length),
     talon: { revealed: s.talonRevealed, piles: s.talonSeen ? s.talonSeen.map((p) => [...p]) : null },

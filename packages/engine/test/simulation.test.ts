@@ -14,6 +14,12 @@ describe('random-bot simulation (invariants hold in every state)', () => {
     expect(r.games).toBe(300);
   });
 
+  it('2 players + 2 dummies: 400 rounds, including reshuffles', () => {
+    const r = runSimulation({ games: 400, seed: 5, seatKinds: ['player', 'dummy', 'player', 'dummy'], exhaustiveEvery: 5 });
+    expect(r.games).toBe(400);
+    expect(r.kinds.reshuffle).toBeGreaterThan(0);
+  });
+
   it('infinite contra chains also stay consistent', () => {
     const r = runSimulation({ games: 200, seed: 3, infiniteContra: true });
     expect(r.games).toBe(200);
