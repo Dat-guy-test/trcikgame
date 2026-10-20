@@ -1,10 +1,10 @@
 <script lang="ts">
-  import type { Game } from '../lib/game.svelte';
+  import type { GameLike } from '../lib/gamelike';
   import { t, type Key } from '../lib/i18n.svelte';
   import { go } from '../lib/router.svelte';
   import Scoreboard from './Scoreboard.svelte';
 
-  let { game }: { game: Game } = $props();
+  let { game }: { game: GameLike } = $props();
 
   const v = $derived(game.view);
   const res = $derived(v.round.result);
@@ -60,9 +60,9 @@
     <div class="row">
       {#if v.finished}
         <button class="btn primary" data-testid="to-menu" onclick={() => go('menu')}>{t('action.menu')}</button>
-        <button class="btn" data-testid="again" onclick={() => location.reload()}>{t('action.again')}</button>
+        <button class="btn" data-testid="again" onclick={() => (game.online ? go('online') : location.reload())}>{t('action.again')}</button>
       {:else}
-        <button class="btn primary" data-testid="next-round" onclick={game.next}>{t('action.nextRound')}</button>
+        <button class="btn primary" data-testid="next-round" disabled={game.votedNext === true} onclick={game.next}>{game.votedNext ? t('room.waitingNext') : t('action.nextRound')}</button>
       {/if}
     </div>
   </div>
