@@ -24,7 +24,7 @@
   const participant = $derived(view.table[seat]!);
   const isDummy = $derived(view.participantKinds[participant] === 'dummy');
   const open = $derived(r.hands[seat]);
-  const time = $derived(view.timers.timesMs[participant] ?? null);
+  const time = $derived(view.timers.banksMs[participant] ?? null);
   const roles = $derived.by(() => {
     const out: string[] = [];
     if (r.declarer === seat) out.push(t('role.declarer'));
