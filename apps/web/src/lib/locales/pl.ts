@@ -99,7 +99,7 @@ const pl: Record<keyof typeof en, string> = {
   'role.declarer': 'rozgrywający',
   'role.partner': 'partner',
   'role.starter': 'zaczyna',
-  'role.dummy': 'Dummy',
+  'role.dummy': 'Kukła',
   'talon.title': 'Talon',
   'talon.taken': 'wzięte przez rozgrywającego',
   'talon.left': 'stos obrońców',
