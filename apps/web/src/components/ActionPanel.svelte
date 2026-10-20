@@ -4,12 +4,12 @@
     CONTRACTS, bidValue, isValidDiscardView, isValidTakeView, type Action, type Bid, type BonusKind, type ContractId, type ContraTarget,
   } from '@tarok/engine';
   import { SUIT_SYMBOL, suitName } from '../lib/cardUi';
-  import type { Game } from '../lib/game.svelte';
+  import type { GameLike } from '../lib/gamelike';
   import { t, type Key } from '../lib/i18n.svelte';
   import Card from './Card.svelte';
   import Clock from './Clock.svelte';
 
-  let { game, selected = $bindable([]) }: { game: Game; selected: number[] } = $props();
+  let { game, selected = $bindable([]) }: { game: GameLike; selected: number[] } = $props();
 
   const v = $derived(game.view);
   const r = $derived(v.round);
@@ -75,7 +75,7 @@
     selected = [];
     game.act(a);
   };
-  const acting = $derived(v.timers.actingParticipant === v.participant);
+  const myTime = $derived(v.timers.banksMs[v.participant] ?? null);
   const waitingFor = $derived.by(() => {
     const seat = r.expectedActor;
     return seat === null ? '' : game.nameOf(v.table[seat]!);
@@ -86,12 +86,12 @@
   <div class="status">
     {#if v.stage === 'viewing'}
       <span>{t('status.viewing')}</span>
-      <Clock ms={v.timers.viewMsLeft} />
+      <Clock ms={myTime} label={t('clock.time')} warn={60_000} />
     {:else if v.stage === 'playing' && !mine}
       <span>{t('status.waiting', { name: waitingFor })}</span>
     {:else if mine}
       <strong>{t('status.yourTurn')}</strong>
-      <Clock ms={v.timers.decisionMsLeft} />
+      <Clock ms={myTime} label={t('clock.time')} />
       <Clock ms={v.timers.graceMsLeft} label={t('clock.grace')} />
     {/if}
   </div>
