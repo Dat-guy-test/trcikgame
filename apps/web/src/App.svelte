@@ -10,6 +10,7 @@
     rules: () => import('./screens/Rules.svelte'),
     online: () => import('./screens/Online.svelte'),
     game: () => import('./screens/GameScreen.svelte'),
+    room: () => import('./screens/Room.svelte'),
   };
 
   let Screen = $state.raw<Component | null>(null);
