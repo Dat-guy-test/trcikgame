@@ -98,7 +98,7 @@ describe('bot-vs-bot play', () => {
       const h = hostRunToEnd(
         createHost({
           regularPlayers: players, dummies, winCondition: { kind: 'rounds', rounds: 6 }, failSafeMinutes: null, infiniteContra: false,
-          timers: { viewSeconds: 180, licitationDecisionSeconds: 20, bankSeconds: 'auto' },
+          timers: { bankSeconds: 'auto' },
         }, 3, Array.from({ length: n }, () => 'bot' as Controller)),
         () => heuristicBot.choose, createRng(3),
       );
