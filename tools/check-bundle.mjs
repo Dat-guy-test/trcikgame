@@ -8,7 +8,7 @@ const html = readFileSync(join(dist, 'index.html'), 'utf8');
 const gz = (f) => gzipSync(readFileSync(join(dist, f))).length;
 
 // Initial = the entry script plus everything it (and the modulepreloads) pulls in statically.
-const initial = new Set([...html.matchAll(/(?:src|href)="\/(assets\/[^"]+\.js)"/g)].map((m) => m[1]));
+const initial = new Set([...html.matchAll(/(?:src|href)="(?:\.\/|\/)(assets\/[^"]+\.js)"/g)].map((m) => m[1]));
 const seen = new Set();
 const visit = (f) => {
   if (seen.has(f)) return;
