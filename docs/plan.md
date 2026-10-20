@@ -1,8 +1,8 @@
 # Tarok website: Plan and progress
 
 Merges the original `Plan.txt` with the progress made so far. Rules live in `rules.md`.
-Last updated after milestone 9 (CI and deployment repair). Milestones 6 to 9 were written without a build
-environment: nothing in them has been compiled or run by the author yet (see section 9, milestones 8 and 9, and section 10).
+Last updated after milestone 10 (online game screen fix). Milestones 6 to 10 were written without a build
+environment: nothing in them has been compiled or run by the author yet (see section 9 and section 10).
 
 **Goals:** unbloated, as smooth as possible, perfectly mobile compatible.
 **Features:** main menu (name, options, rules + PDF, local game, online game, language switch), configurable
@@ -26,7 +26,8 @@ question in the original plan. It needs heavy bidding, bonus and partnership log
 | 5 | Rules notebook and PDF pipeline | Notebook screen renders `docs/rules.md` (English only); PDF not started |
 | 6 | Online hosting | **Written, untested**: protocol, room server (Cloudflare Durable Object), lobby and room UI, secure shuffle; rooms by code or link, no automatic matchmaking |
 | 6a | Hosting preparation | **Done (untested)**: relative base, GitHub Pages workflow, CI workflow, `docs/hosting.md`, Wake Lock, web manifest |
-| 6b | CI / deployment repair | **Done (not yet re-run)**: migration applied by hand, CORS origin and workspace config fixed (milestone 9) |
+| 6b | CI / deployment repair | **Done (not yet re-run)**: CORS origin and workspace config fixed (milestone 9) |
+| 6c | Online game screen fix | **Done (not yet re-run)**: `GameScreen` now renders the online game instead of a local one (milestone 10) |
 | 7 | Automatic matchmaking and polish | Not started (matchmaking deliberately not wanted for now) |
 
 ---
@@ -52,6 +53,9 @@ seeded PRNG. It knows nothing about the DOM or the network.
 - **Local play:** the engine runs in the browser.
 - **Online play:** the identical engine runs in the room's Durable Object, which is the authority. Clients send
   intents; the server validates and broadcasts a **per-player view**, so hidden hands never cross the wire.
+- **One game screen, two game sources:** `GameScreen` takes an optional `game: GameLike` prop. The local `Game` and the
+  WebSocket `OnlineGame` both implement `GameLike` (`view`, `names`, `hold`, `roundsTotal`, `act`, `ready`, `next`, ...).
+  The online `Room` screen passes its `OnlineGame` in; with no prop the screen creates a local game against bots.
 - **Bots:** functions `(playerView) -> action`, running in both places; the server uses them to fill empty seats and for the
   "random move after the grace period" rule. Heuristic bot first; ISMCTS in a Web Worker later.
 - **Dummy players** are a rules-config variant of the engine (a seat with a controller), not a UI hack, and are a different
@@ -65,19 +69,18 @@ seeded PRNG. It knows nothing about the DOM or the network.
 
 ## 4. Project structure (pnpm monorepo)
 
-packages/
-engine/ pure rules, state machine, scoring, variants (shared) <- real work so far
-ai/ bot strategies + tournament harness (shared) <- first version
-protocol/ message types + validation (shared client/server) <- written (milestone 8)
-apps/
-web/ Svelte SPA: menu, settings, local and online UIs <- placeholder
-server/ Cloudflare Worker + Durable Object “Room” <- written (milestone 8)
-content/
-rules/<lang>/*.md rules notebook source (single source of truth)
-i18n/<lang>.json UI strings
-tools/ build scripts (PDF, i18n key checks) and simulate.ts (CLI harness)
-docs/ rules.md, plan.md, ui-guide.md, hosting.md
-
+    packages/
+      engine/    pure rules, state machine, scoring, variants (shared)       <- real work so far
+      ai/        bot strategies + tournament harness (shared)                <- first version
+      protocol/  message types + validation (shared client/server)           <- written (milestone 8)
+    apps/
+      web/       Svelte SPA: menu, settings, local and online UIs            <- placeholder
+      server/    Cloudflare Worker + Durable Object "Room"                   <- written (milestone 8)
+    content/
+      rules/<lang>/*.md     rules notebook source (single source of truth)
+      i18n/<lang>.json      UI strings
+    tools/       build scripts (PDF, i18n key checks) and simulate.ts (CLI harness)
+    docs/        rules.md, plan.md, ui-guide.md, hosting.md
 
 Engine modules (`packages/engine/src`): `cards`, `rng`, `deal`, `tricks`, `contracts` (contract table as data), `bidding`,
 `scoring`, `config`, `state`, `evaluate`, `round` (state machine), `view`, `viewActions` (legal actions from a view),
@@ -174,7 +177,6 @@ protocol (short keys, MessagePack later if needed).
 - Random legal-move bot and `sim.ts` invariants: all 54 cards conserved at every step, standings sum to zero, counted points total 70,
   view leaks checked, every legal action accepted by `apply`, termination.
 - CLI: `pnpm sim -- --games 2000 --seed 1 [--players 3] [--infinite-contra]`.
-- Tests: 103 passing at the time. Typecheck clean.
 
 ### Milestone 2a: match layer (done)
 - `match.ts`: pure, JSON-serialisable `MatchState` over rounds. `createMatch`, `matchApply`, `nextRound` (only between rounds), `addElapsed`,
@@ -242,35 +244,44 @@ protocol (short keys, MessagePack later if needed).
   standard (non-hibernating) WebSockets.
 
 ### Milestone 9: CI and deployment repair (done, not yet re-run)
-Cause of the failing CI: the milestone 6 to 8 migration (`tools/apply-changes.mjs`) was never applied, so half of the repository was at the milestone 5 API and
-half at the milestone 8 API. Typecheck errors: `createMatch` / `nextRound` without the `deck` parameter, `RoundConfig` without `deck`, tests still using
-`viewSeconds` / `licitationDecisionSeconds`.
-- Applied the migration by hand: `RoundConfig.deck`, `deal(config.seed, config.deck)`, `deck` parameters in `match.ts`, new `TimerConfig` use in tests and
-  `game.svelte.ts` (plus `roundsTotal`), `GameLike` in `ActionPanel` / `ResultDialog` / `GameScreen`, `room` route in `App.svelte`, Wake Lock, manifest link,
-  bundle checker for relative asset paths, root `server:dev` / `server:deploy` scripts, `ui-guide.md` clocks row.
+Cause of the failing CI: the milestone 6 to 8 migration (`tools/apply-changes.mjs`) was never applied in full, so parts of the repository were at the
+milestone 5 API and parts at the milestone 8 API.
+- Applied much of the migration by hand (timers, `GameLike`, `room` route, Wake Lock, manifest link, root scripts, `ui-guide.md`).
 - **Deployment bugs found on the way:** `wrangler.toml` `ALLOWED_ORIGIN` was a repository URL (an origin has no path, so every request from the Pages site would
   be rejected with 403); it is now `https://dat-guy-test.github.io`. `pnpm-workspace.yaml` had placeholder text in `allowBuilds`.
-- **Locales:** `pl.ts` had typos (`{messege}`), an English string and stale keys; both dictionaries now have the same keys, `clock.bank` became `clock.time`,
-  `online.soon` was removed, `room.waitingNext` added.
-- `tools/apply-changes.mjs` is obsolete (do not run it; it would duplicate locale keys): delete it. The duplicate `plan.md` and `rules.md` in the repository root
-  are also stale: delete them and keep the `docs/` copies.
+- **Locales:** both dictionaries now have the same keys, `clock.bank` became `clock.time`, `online.soon` was removed, `room.waitingNext` added.
+
+### Milestone 10: online game screen fix (done, not yet re-run)
+**Symptom:** after the host pressed *Start game*, every player landed in a local game against three bots.
+**Cause:** the milestone 9 hand migration missed `GameScreen.svelte`. It still created `new Game(...)` unconditionally and had no `game` prop, so the
+`<GameScreen {game} />` in `Room.svelte` was silently ignored and the local game (with heuristic bots) ran instead of the room's `OnlineGame`.
+**Fix (drop-in replacements):**
+- `GameScreen.svelte`: accepts an optional `game: GameLike` prop (`untrack(() => given) ?? new Game(...)`), uses `game.roundsTotal`, and holds the Wake Lock while open.
+- `ActionPanel.svelte`, `ResultDialog.svelte`: typed against `GameLike`; clocks read the single time reserve (`banksMs`, `graceMsLeft`) instead of the removed
+  `viewMsLeft` / `decisionMsLeft`; the next-round button shows a "waiting for the others" state online (`votedNext`) and "Play again" returns to the Online screen.
+- `game.svelte.ts`: `Game implements GameLike`, adds `roundsTotal`, uses `{ bankSeconds: null }` for "no clocks".
+**Other leftovers of the same incomplete migration fixed:** `RoundConfig.deck`, `newRound` using the supplied deck (and not keeping it in the state),
+`createMatch` / `nextRound` `deck` parameters (so online rooms really deal from the cryptographic shuffle), stale timer values in `bidding.test.ts` and
+`heuristic.test.ts`, and the relative-path regex in `tools/check-bundle.mjs`.
+**Housekeeping still to do by hand:** delete `tools/apply-changes.mjs` (obsolete, running it would duplicate locale keys) and any stale `plan.md` / `rules.md` in the repository root.
 
 ---
 
 ## 10. Next expected step
 
-1. **Re-run CI.** Push the milestone 9 changes. Expect the engine typecheck to pass; the first run may still reveal errors that were hidden behind the engine failure
-   (pnpm stops at the first failing package). Most likely spots: Svelte 5 typing in `online.svelte.ts` / `Room.svelte` / `GameScreen.svelte`, the
-   `cloudflare:workers` types in `apps/server`, and the wrangler version. Run `pnpm typecheck && pnpm i18n && pnpm test` locally first if possible.
-2. **Deploy:** `pnpm server:deploy`, set the repository variable `VITE_SERVER_URL` (or paste the Workers URL under *Play online -> Server address*), enable
-   Pages (Source: GitHub Actions), then play on two phones. Check `https://<worker>.workers.dev/` shows `tarok server ok` and that creating a room does not
-   return 403.
-3. **Look at it on a real phone and fix the layout**, then replace `Card.svelte` and the colours with the real art; PWA service worker, Playwright screenshots in CI.
-4. Online follow-ups: UI tests for `Online` / `Room` with a fake WebSocket, Playwright test with two browsers against `wrangler dev`, rate limiting, hibernating
-   WebSockets, throttled persistence, optional chat, host kicking a player, sit-down for spectators when a seat frees up.
-5. Rules notebook per language and the PDF pipeline (step 5); Polish rules text.
-6. Ongoing bot work: tune other thresholds with forced benchmarks, defence in called-king games, optional ISMCTS.
-7. Later (step 7): automatic matchmaking with a queue Durable Object, if wanted.
+1. **Re-run CI.** Run `pnpm typecheck && pnpm i18n && pnpm test` locally first if possible, then push. The first run may still reveal errors that were hidden behind
+   earlier failures (pnpm stops at the first failing package). Most likely spots: Svelte 5 typing in `online.svelte.ts` / `Room.svelte`, the `cloudflare:workers` types
+   in `apps/server`, and the wrangler version.
+2. **Deploy and verify online play:** `pnpm server:deploy`, set the repository variable `VITE_SERVER_URL` (or paste the Workers URL under *Play online -> Server address*),
+   enable Pages (Source: GitHub Actions). Create a room on one phone, join on another, press Start: both should see the same table (hands differ, scoreboard shared,
+   the other human is not a bot). Check `https://<worker>.workers.dev/` shows `tarok server ok` and that creating a room does not return 403.
+3. **Add the missing UI test:** a jsdom test for `Room.svelte` / `GameScreen` with a fake `GameLike` (and a fake WebSocket) so this regression cannot return.
+4. **Look at it on a real phone and fix the layout**, then replace `Card.svelte` and the colours with the real art; PWA service worker, Playwright screenshots in CI.
+5. Online follow-ups: Playwright test with two browsers against `wrangler dev`, rate limiting, hibernating WebSockets, throttled persistence, optional chat,
+   host kicking a player, sit-down for spectators when a seat frees up.
+6. Rules notebook per language and the PDF pipeline (step 5); Polish rules text.
+7. Ongoing bot work: tune other thresholds with forced benchmarks, defence in called-king games, optional ISMCTS.
+8. Later (step 7): automatic matchmaking with a queue Durable Object, if wanted.
 
 ---
 
