@@ -11,19 +11,29 @@
   import TrickArea from '../components/TrickArea.svelte';
   import { suitName } from '../lib/cardUi';
   import { Game } from '../lib/game.svelte';
+  import type { GameLike } from '../lib/gamelike';
   import { t, type Key } from '../lib/i18n.svelte';
   import { go } from '../lib/router.svelte';
   import { settings } from '../lib/settings.svelte';
   import { setup } from '../lib/setup.svelte';
+  import { keepAwake } from '../lib/wakeLock';
 
-  const game = new Game($state.snapshot(setup), {
-    you: settings.name.trim() || t('you'),
-    bot: (n) => t('bot.name', { n }),
-    dummy: t('role.dummy'),
-  });
+  // An online room passes its own game (a WebSocket client); otherwise this is a local game against bots.
+  let { game: given = undefined }: { game?: GameLike } = $props();
+  const game: GameLike =
+    untrack(() => given) ??
+    new Game($state.snapshot(setup), {
+      you: settings.name.trim() || t('you'),
+      bot: (n) => t('bot.name', { n }),
+      dummy: t('role.dummy'),
+    });
   onMount(() => {
     game.start();
-    return () => game.destroy();
+    const release = keepAwake();
+    return () => {
+      release();
+      game.destroy();
+    };
   });
 
   const v = $derived(game.view);
@@ -78,7 +88,7 @@
   const contraSummary = $derived(
     Object.entries(r.contraLevels).filter(([, lv]) => lv > 0).map(([k, lv]) => `${k === 'contract' ? '' : `${t(`bonus.${k}` as Key)} `}×${2 ** lv}`).join(', '),
   );
-  const roundsTotal = $derived(game.host.match.config.winCondition.kind === 'rounds' ? game.host.match.config.winCondition.rounds : null);
+  const roundsTotal = $derived(game.roundsTotal);
 
   let showScore = $state(false);
   let confirmLeave = $state(false);
