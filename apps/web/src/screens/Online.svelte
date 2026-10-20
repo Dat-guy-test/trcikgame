@@ -77,7 +77,7 @@
     </label>
     <label class="check"><input type="checkbox" bind:checked={timers} /> {t('setup.timers')}</label>
     <label class="check"><input type="checkbox" bind:checked={infiniteContra} /> {t('setup.infiniteContra')}</label>
-    <button class="btn primary" data-testid="create-room" disabled={busy} onclick={create}>{busy ? t('online.creating') : t('online.create')}</button>
+    <button class="btn primary" data-testid="create-room" disabled={busy} onclick={() => { create(); }}> {busy ? t('online.creating') : t('online.create')} </button>
   </section>
 
   <section class="box">
