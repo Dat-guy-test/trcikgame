@@ -43,7 +43,7 @@
   <div class="meta">
     <span>{t('seat.cards', { n: r.handSizes[seat] ?? 0 })}</span>
     {#if tricksWon > 0}<span>{t('seat.tricks', { n: tricksWon })}</span>{/if}
-    {#if !isDummy}<Clock ms={bank} warn={60_000} label={t('clock.time')} />{/if}
+    {#if !isDummy}<Clock ms={time} warn={60_000} label={t('clock.time')} />{/if}
   </div>
   {#if open && open.length > 0 && !hideHand}
     <Hand cards={open} size="sm" {playable} {selected} {onpick} />
