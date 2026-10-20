@@ -14,4 +14,4 @@ new_sqlite_classes = ["Room"]
 [vars]
 # Which websites may talk to this server: comma-separated origins, e.g. "https://your-name.github.io".
 # "*" allows everything (fine for testing, tighten it before sharing widely).
-ALLOWED_ORIGIN = "*"
+ALLOWED_ORIGIN = "https://github.com/Dat-guy-test/trcikgame"
