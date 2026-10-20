@@ -121,8 +121,8 @@ describe('leftBehind (Talon cards not taken)', () => {
 });
 
 describe('timer defaults', () => {
-  it('bank is 20 / 15 / 10 minutes for 2 / 3 / 4+ regular players', () => {
-    expect([2, 3, 4, 5, 8].map(defaultBankSeconds)).toEqual([1200, 900, 600, 600, 600]);
+  it('time per round is 30 / 20 / 15 minutes for 2 / 3 / 4+ regular players', () => {
+    expect([2, 3, 4, 5, 8].map(defaultBankSeconds)).toEqual([1800, 1200, 900, 900, 900]);
   });
 
   it('resolves "auto" from the number of regular players, dummies not counted', () => {
@@ -130,8 +130,7 @@ describe('timer defaults', () => {
       regularPlayers: 3, dummies: 1, winCondition: { kind: 'rounds', rounds: 5 },
       failSafeMinutes: null, infiniteContra: false, timers: DEFAULT_TIMERS,
     };
-    expect(resolveBankSeconds(cfg)).toBe(900);
-    expect(DEFAULT_TIMERS.viewSeconds).toBe(180);
-    expect(DEFAULT_TIMERS.licitationDecisionSeconds).toBe(20);
+    expect(resolveBankSeconds(cfg)).toBe(1200);
+    expect(DEFAULT_TIMERS.bankSeconds).toBe('auto');
   });
 });
