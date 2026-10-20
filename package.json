@@ -10,17 +10,14 @@
     "forced": "tsx tools/forced.ts",
     "i18n": "tsx tools/check-i18n.ts",
     "dev": "pnpm --filter @tarok/web dev",
-    "build": "pnpm --filter @tarok/web build"
+    "build": "pnpm --filter @tarok/web build",
+    "server:dev": "pnpm --filter @tarok/server dev",
+    "server:deploy": "pnpm --filter @tarok/server cf:deploy"
   },
   "devDependencies": {
     "fast-check": "^3.22.0",
     "typescript": "^5.6.3",
     "vitest": "^2.1.8",
     "tsx": "^4.19.2"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild"
-    ]
   }
 }
