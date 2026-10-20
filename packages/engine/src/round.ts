@@ -59,7 +59,7 @@ export function newRound(config: RoundConfig): RoundState {
     throw new Error('at least 2 regular players are required');
   }
   if (!isRegular(config, config.startingPlayer)) throw new Error('the starting player must be a regular player');
-  const d = deal(config.seed);
+  const d = deal(config.seed, config.deck);
   return {
     config: clone(config),
     phase: 'bidding',
