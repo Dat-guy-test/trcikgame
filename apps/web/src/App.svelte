@@ -18,18 +18,13 @@
   $effect(() => {
     const route = router.route;
     if (route === 'menu') {
-      Screen = null;
-      loadedFor = 'menu';
-      return;
-    }
-    let cancelled = false;
-    loaders[route]().then((m) => {
-      if (!cancelled) {
+      Screen = null; // or Menu component
+    } else if (route === 'room') {
+      //CORRECT: Execute the import, but do NOT return the Promise
+      import('./screens/GameScreen.svelte').then(m => {
         Screen = m.default;
-        loadedFor = route;
-      }
-    });
-    return () => (cancelled = true);
+      });
+    }
   });
 </script>
 
