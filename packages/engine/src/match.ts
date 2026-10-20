@@ -7,6 +7,8 @@
 import type { MatchConfig } from './config';
 import { IllegalAction, apply, newRound, type Action } from './round';
 import { nextStartingPlayer, type RoundResult, type RoundState, type SeatKind } from './state';
+import type { CardId } from './cards';
+import type { MatchConfig } from './config';
 
 export interface Placing {
   /** Participant index (equal to the seat with 4 or fewer players). */
@@ -113,14 +115,14 @@ export function placings(standings: readonly number[], kinds: readonly SeatKind[
   });
 }
 
-export function createMatch(config: MatchConfig, seed: number, firstStartingPlayer?: number): MatchState {
+export function createMatch(config: MatchConfig, seed: number, firstStartingPlayer?: number, deck?: CardId[]): MatchState {
   const seatKinds = seatKindsFor(config);
   const participantKinds = participantKindsFor(config);
   validateWinCondition(config);
   const startingPlayer = firstStartingPlayer ?? seatKinds.indexOf('player');
   const roundSeed = deriveRoundSeed(seed, 0);
   const cfg = JSON.parse(JSON.stringify(config)) as MatchConfig;
-  const round = newRound({ seatKinds, startingPlayer, seed: roundSeed, infiniteContra: cfg.infiniteContra });
+  const round = newRound({ seatKinds, startingPlayer, seed: roundSeed, infiniteContra: cfg.infiniteContra, deck });
   const table = [0, 1, 2, 3];
   const queue = participantKinds.map((_, i) => i).slice(4);
   return {
@@ -194,7 +196,7 @@ export function matchApply(m: MatchState, actor: number, action: Action): MatchS
 }
 
 /** Starts the next round (starting player rotates, skipping dummies). Only between rounds. */
-export function nextRound(m: MatchState): MatchState {
+export function nextRound(m: MatchState, deck?: CardId[]): MatchState {
   if (m.finished) throw new IllegalAction('the match is over');
   if (m.round.phase !== 'done') throw new IllegalAction('the current round is still running');
   const index = m.roundIndex + 1;
@@ -202,7 +204,7 @@ export function nextRound(m: MatchState): MatchState {
   const reshuffled = m.round.result?.kind === 'reshuffle';
   const startingPlayer = reshuffled ? m.round.config.startingPlayer : nextStartingPlayer(m.seatKinds, m.round.config.startingPlayer);
   const seed = deriveRoundSeed(m.seed, index);
-  const round = newRound({ seatKinds: m.seatKinds, startingPlayer, seed, infiniteContra: m.config.infiniteContra });
+  const round = newRound({ seatKinds: m.seatKinds, startingPlayer, seed, infiniteContra: m.config.infiniteContra, deck });
   // More than 4 players: the player in seat (finished round % 4) goes to the back of the queue, the first spectator takes the seat.
   const table = [...m.table];
   const queue = [...m.queue];
