@@ -12,6 +12,6 @@ tag = "v1"
 new_sqlite_classes = ["Room"]
 
 [vars]
-# Which websites may talk to this server: comma-separated origins, e.g. "https://your-name.github.io".
-# "*" allows everything (fine for testing, tighten it before sharing widely).
-ALLOWED_ORIGIN = "https://github.com/Dat-guy-test/trcikgame"
+# An ORIGIN is scheme + host only (no path): the GitHub Pages site, not the repository URL.
+# Comma-separate several; "*" allows everything (fine for a first test).
+ALLOWED_ORIGIN = "https://dat-guy-test.github.io"
