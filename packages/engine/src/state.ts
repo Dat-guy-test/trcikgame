@@ -15,6 +15,8 @@ export interface RoundConfig {
   seed: number;
   /** Continue the contra chain past Mordkontra (x16). */
   infiniteContra: boolean;
+  /** Full deck order for the deal (online rooms: cryptographic shuffle). Without it the deal comes from `seed`. */
+  deck?: number[];
 }
 
 export type Phase =
