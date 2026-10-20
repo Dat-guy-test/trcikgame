@@ -5,9 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "pnpm --filter @tarok/web build",
-    "server:dev": "pnpm --filter @tarok/server dev",
-    "server:deploy": "pnpm --filter @tarok/server cf:deploy"
+    "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "svelte-check --tsconfig ./tsconfig.json",
