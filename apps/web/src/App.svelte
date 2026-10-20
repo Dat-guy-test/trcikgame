@@ -16,16 +16,25 @@
   let loadedFor = $state<Route>('menu');
 
   $effect(() => {
-    const route = router.route;
-    if (route === 'menu') {
-      Screen = null; // or Menu component
-    } else if (route === 'room') {
-      //CORRECT: Execute the import, but do NOT return the Promise
-      import('./screens/GameScreen.svelte').then(m => {
-        Screen = m.default;
-      });
-    }
-  });
+      const route = router.route;
+      
+      if (route === 'menu') {
+        Screen = null;
+        loadedFor = route;
+      } else {
+        // Find the correct loader for the current route (setup, game, online, etc.)
+        const load = loaders[route as keyof typeof loaders];
+        
+        if (load) {
+          // Execute the dynamic import, but DO NOT return it!
+          load().then(m => {
+            Screen = m.default;
+            // We must update loadedFor, otherwise the {#if} block below won't render Screen!
+            loadedFor = route;
+          });
+        }
+      }
+    });
 </script>
 
 {#key loadedFor}
