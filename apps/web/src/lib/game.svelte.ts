@@ -7,6 +7,7 @@ import {
   DEFAULT_TIMERS, IllegalAction, actorParticipant, createHost, createRng, hostAct, hostContinue, hostReady,
   hostRunBots, hostTick, hostView, participantKindsFor, type Action, type CompletedTrick, type HostState, type MatchConfig,
 } from '@tarok/engine';
+import type { GameLike } from './gamelike';
 import type { GameSetup } from './setup.svelte';
 import { settings } from './settings.svelte';
 
@@ -21,7 +22,7 @@ export function configFromSetup(s: GameSetup): MatchConfig {
       : { kind: 'timeLimit', minutes: s.winValue },
     failSafeMinutes: s.failSafeMinutes,
     infiniteContra: s.infiniteContra,
-    timers: s.timers ? DEFAULT_TIMERS : { viewSeconds: null, licitationDecisionSeconds: null, bankSeconds: null },
+    timers: s.timers ? DEFAULT_TIMERS : { bankSeconds: null },
   };
 }
 
@@ -29,13 +30,17 @@ export function configFromSetup(s: GameSetup): MatchConfig {
 const TRICK_HOLD_MS = 1300;
 const TICK_MS = 250;
 
-export class Game {
+export class Game implements GameLike {
   host = $state.raw<HostState>(undefined as unknown as HostState);
   /** The trick that was just completed, shown for a moment. */
   hold = $state.raw<CompletedTrick | null>(null);
   readonly me = 0;
   readonly view = $derived(hostView(this.host, this.me));
   readonly names: string[];
+  get roundsTotal(): number | null {
+    const wc = this.host.match.config.winCondition;
+    return wc.kind === 'rounds' ? wc.rounds : null;
+  }
 
   private rng = createRng((Date.now() ^ Math.floor(Math.random() * 2 ** 31)) >>> 0);
   private last = 0;
