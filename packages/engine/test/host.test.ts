@@ -33,22 +33,34 @@ describe('autopilot', () => {
   });
 });
 
-describe('card viewing', () => {
-  it('waits for the humans: ready button or the 3-minute timer', () => {
+describe('time reserve: card viewing', () => {
+  it('viewing is paid from the player\'s own time; running out means ready', () => {
     let h = createHost(cfg(), 1, ['human', 'bot', 'bot', 'bot']);
     expect(h.stage).toBe('viewing');
     expect(hostRunBots(h, botFor, rng()).stage).toBe('viewing');
     expect(() => hostAct(h, 0, pass)).toThrow(IllegalAction);
-    expect(hostView(h, 0).timers.viewMsLeft).toBe(180_000);
-    h = hostTick(h, 179_999, rng());
+    expect(hostView(h, 0).timers.banksMs[0]).toBe(900_000); // 15 minutes with 4 players
+    expect(hostView(h, 0).timers.draining).toEqual([0]);
+    h = hostTick(h, 10_000, rng());
+    expect(h.clocks.banksMs[0]).toBe(890_000);
+    h = hostTick(h, 889_999, rng());
     expect(h.stage).toBe('viewing');
     expect(hostTick(h, 1, rng()).stage).toBe('playing');
     expect(hostReady(h, 0).stage).toBe('playing');
   });
 
-  it('is skipped without humans or with the timer off', () => {
+  it('only humans who are not ready pay', () => {
+    let h = createHost(cfg(), 1, ['human', 'human', 'bot', 'bot']);
+    h = hostReady(h, 0);
+    expect(h.stage).toBe('viewing');
+    h = hostTick(h, 5_000, rng());
+    expect(h.clocks.banksMs.slice(0, 2)).toEqual([900_000, 895_000]);
+    expect(hostView(h, 0).timers.draining).toEqual([1]);
+  });
+
+  it('is skipped without humans or with the clocks off', () => {
     expect(createHost(cfg(), 1, bots(4)).stage).toBe('playing');
-    expect(createHost(cfg({}, { viewSeconds: null }), 1, humans(4)).stage).toBe('playing');
+    expect(createHost(cfg({}, { bankSeconds: null }), 1, humans(4)).stage).toBe('playing');
   });
 
   it('a human handing over to a bot does not stall the table', () => {
@@ -59,24 +71,32 @@ describe('card viewing', () => {
   });
 });
 
-describe('licitation clock', () => {
-  it('20 seconds per decision, then the default action (pass)', () => {
-    let h = readyAll(createHost(cfg(), 2, humans(4)));
+describe('time reserve: bidding', () => {
+  it('bidding draws on the reserve; an empty reserve gives 10 s, then the default action (pass)', () => {
+    let h = readyAll(createHost(cfg({}, { bankSeconds: 30 }), 2, humans(4)));
     expect(h.stage).toBe('playing');
-    h = hostTick(h, 19_999, rng());
+    h = hostTick(h, 29_999, rng());
     expect(h.match.round.toAct).toHaveLength(4);
-    expect(hostView(h, 0).timers.decisionMsLeft).toBe(1);
+    expect(h.clocks.banksMs[0]).toBe(1);
     h = hostTick(h, 1, rng());
-    expect(h.match.round.toAct).toHaveLength(3);
-    h = hostTick(h, 3 * 20_000, rng());
-    expect(h.match.round.contract).toBe('trischaken'); // everybody timed out with a pass
+    expect(h.match.round.toAct).toHaveLength(4);
+    expect(hostView(h, 0).timers.graceMsLeft).toBe(10_000);
+    h = hostTick(h, 9_999, rng());
+    expect(h.match.round.toAct).toHaveLength(4);
+    h = hostTick(h, 1, rng());
+    expect(h.match.round.toAct).toHaveLength(3); // seat 0 passed by default
+    h = hostTick(h, 3 * 40_000, rng());
+    expect(h.match.round.contract).toBe('trischaken'); // everybody ran out and passed
   });
 
-  it('an action resets the decision clock', () => {
-    let h = readyAll(createHost(cfg(), 2, humans(4)));
-    h = hostTick(h, 15_000, rng());
+  it('only the waiting player pays, and one reserve covers viewing and bidding', () => {
+    let h = createHost(cfg({}, { bankSeconds: 600 }), 2, humans(4));
+    h = hostTick(h, 20_000, rng()); // everybody views for 20 s
+    h = readyAll(h);
+    expect(h.clocks.banksMs).toEqual([580_000, 580_000, 580_000, 580_000]);
+    h = hostTick(h, 5_000, rng());
     h = hostAct(h, 0, pass);
-    expect(hostView(h, 1).timers.decisionMsLeft).toBe(20_000);
+    expect(h.clocks.banksMs).toEqual([575_000, 580_000, 580_000, 580_000]);
   });
 
   it('bots are never timed', () => {
@@ -89,17 +109,17 @@ describe('licitation clock', () => {
 describe('next deadline', () => {
   it('tells a server when to wake up next', () => {
     let h = createHost(cfg(), 2, humans(4));
-    expect(hostNextDeadlineMs(h)).toBe(180_000);
+    expect(hostNextDeadlineMs(h)).toBe(900_000);
     h = readyAll(h);
-    expect(hostNextDeadlineMs(h)).toBe(20_000);
+    expect(hostNextDeadlineMs(h)).toBe(900_000);
     h = hostTick(h, 5_000, rng());
-    expect(hostNextDeadlineMs(h)).toBe(15_000);
+    expect(hostNextDeadlineMs(h)).toBe(895_000);
     expect(hostNextDeadlineMs(createHost(cfg(), 2, bots(4)))).toBeNull();
     expect(hostNextDeadlineMs(createHost(cfg({ winCondition: { kind: 'timeLimit', minutes: 2 } }), 2, bots(4)))).toBe(120_000);
   });
 });
 
-describe('bank clock', () => {
+describe('time reserve: play', () => {
   const toBank = (contract: 'dreier' | 'rufer', bankSeconds = 60) => {
     let h = readyAll(createHost(cfg({}, { bankSeconds }), 3, humans(4)));
     h = acts(h, [[0, bid(contract)], [1, pass], [2, pass], [3, pass], [0, { type: 'confirm' }], [0, noDeclare]]);
@@ -107,7 +127,7 @@ describe('bank clock', () => {
     return h;
   };
 
-  it('a 1v3 declarer with an empty bank forfeits', () => {
+  it('a 1v3 declarer whose reserve runs out during play forfeits', () => {
     let h = toBank('dreier');
     expect(h.match.round.phase).toBe('take');
     h = hostTick(h, 59_999, rng());
@@ -117,6 +137,19 @@ describe('bank clock', () => {
     expect(h.match.round.result?.kind).toBe('forfeit');
     expect(h.match.round.result?.deltas).toEqual([-12, 4, 4, 4]);
     expect(h.match.standings).toEqual([-12, 4, 4, 4]);
+  });
+
+  it('a declarer who reaches the play phase with an empty reserve forfeits after the 10 s grace', () => {
+    let h = readyAll(createHost(cfg({}, { bankSeconds: 60 }), 3, humans(4)));
+    h = acts(h, [[0, bid('dreier')], [1, pass], [2, pass], [3, pass]]);
+    h = hostTick(h, 60_000, rng()); // the declarer thinks about confirming until the reserve is gone
+    expect(h.clocks.banksMs[0]).toBe(0);
+    h = acts(h, [[0, { type: 'confirm' }], [0, noDeclare], [1, noContra], [2, noContra], [3, noContra]]);
+    expect(h.match.round.phase).toBe('take');
+    h = hostTick(h, 9_999, rng());
+    expect(h.match.round.phase).toBe('take');
+    h = hostTick(h, 1, rng());
+    expect(h.match.round.result?.kind).toBe('forfeit');
   });
 
   it('otherwise 10 seconds of grace, then a random legal move', () => {
@@ -182,6 +215,14 @@ describe('input checks and views', () => {
     expect(hostView(h, 1).legalActions).toEqual([]);
   });
 
+  it('a room spectator (participant -1) gets a public view', () => {
+    const h = readyAll(createHost(cfg(), 7, humans(4)));
+    const spec = hostView(h, -1);
+    expect(spec.seat).toBeNull();
+    expect(spec.round.hands.every((x) => x === null)).toBe(true);
+    expect(spec.legalActions).toEqual([]);
+  });
+
   it('the state is plain JSON and keeps working after a round trip', () => {
     const h = readyAll(createHost(cfg(), 8, ['human', 'bot', 'bot', 'bot']));
     const copy = JSON.parse(JSON.stringify(h)) as HostState;
@@ -196,7 +237,7 @@ describe('soak: random time and input never break the match', () => {
       const r = createRng(100 + g);
       const players = [2, 3, 4, 5][g % 4]!;
       const dummies = players === 2 ? 2 : players === 3 ? 1 : 0;
-      const controllers: Controller[] = Array.from({ length: players === 5 ? 5 : 4 }, (_, i) => (r() < 0.6 ? 'human' : 'bot') as Controller);
+      const controllers: Controller[] = Array.from({ length: players === 5 ? 5 : 4 }, () => (r() < 0.6 ? 'human' : 'bot') as Controller);
       let h = createHost(
         cfg({ regularPlayers: players, dummies, winCondition: { kind: 'rounds', rounds: 3 } }, { bankSeconds: 40 }), 200 + g, controllers,
       );

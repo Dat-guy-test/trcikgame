@@ -2,13 +2,14 @@
  * Host runner: drives a match for a UI or a server. Pure and JSON-serialisable; real time comes in through
  * `hostTick`, human input through `hostAct` / `hostReady` / `hostContinue`, and bots through `hostRunBots`.
  *
- * It owns what the engine deliberately leaves out: the card-viewing phase, the licitation and bank clocks (with the
- * grace period, random move and forfeit), the match time limit, bots, and the per-participant view a client renders.
- * See docs/rules.md section 10.
+ * It owns what the engine deliberately leaves out: the card-viewing phase, the per-player time reserve (with the grace
+ * period, default action, random move and forfeit), the match time limit, bots, and the per-participant view a client
+ * renders. See docs/rules.md section 10.
  */
 import { resolveBankSeconds } from './config';
 import { GRACE_SECONDS, bankExpiryOutcome, clockKind } from './clock';
 import { randomAction } from './bot';
+import type { CardId } from './cards';
 import {
   addElapsed, createMatch, matchApply, nextRound, placings, playedRounds, seatOf,
   type MatchState, type Placing,
@@ -26,7 +27,7 @@ export type Controller = 'human' | 'bot';
 export type BotFn = (view: RoundView, rng: Rng) => Action;
 
 export type HostStage =
-  /** Hands are shown, bidding has not started (shared card-viewing time). */
+  /** Hands are shown, bidding has not started. Every human who is not ready spends their own time. */
   | 'viewing'
   | 'playing'
   /** A round was settled; waiting for `hostContinue`. */
@@ -34,13 +35,9 @@ export type HostStage =
   | 'finished';
 
 export interface HostClocks {
-  /** Card-viewing time left (stage 'viewing' only). */
-  viewMsLeft: number | null;
-  /** Time spent on the current licitation decision. */
-  decisionMs: number;
-  /** Time spent on the current decision with an empty bank. */
+  /** Time spent on the current decision with an empty reserve. */
   graceMs: number;
-  /** Bank per participant, reset every round (`null` = no bank). */
+  /** Time reserve per participant, reset every round (`null` = clocks off). */
   banksMs: (number | null)[];
 }
 
@@ -72,39 +69,43 @@ export function actorParticipant(h: HostState): number | null {
 
 function beginRound(h: HostState): HostState {
   const m = h.match;
-  const viewSec = m.config.timers.viewSeconds;
   const bankSec = resolveBankSeconds(m.config);
-  const viewing = viewSec !== null && humansAtTable(h).length > 0;
+  // Card viewing only exists together with the time reserve (it is paid from it).
+  const viewing = bankSec !== null && humansAtTable(h).length > 0;
   return {
     ...h,
     stage: viewing ? 'viewing' : 'playing',
     ready: h.controllers.map((_, p) => !isHuman(h, p)),
     clocks: {
-      viewMsLeft: viewing ? viewSec * 1000 : null,
-      decisionMs: 0,
       graceMs: 0,
       banksMs: m.participantKinds.map(() => (bankSec === null ? null : bankSec * 1000)),
     },
   };
 }
 
-export function createHost(config: MatchConfig, seed: number, controllers: Controller[], firstStartingPlayer?: number): HostState {
-  const match = createMatch(config, seed, firstStartingPlayer);
+/**
+ * `deck` (optional) is a full deck order for the first deal, so online rooms can shuffle from a cryptographic source.
+ * Without it the deal comes from the seed (local play and tests).
+ */
+export function createHost(
+  config: MatchConfig, seed: number, controllers: Controller[], firstStartingPlayer?: number, deck?: CardId[],
+): HostState {
+  const match = createMatch(config, seed, firstStartingPlayer, deck);
   if (controllers.length !== match.participantKinds.length) {
     throw new Error(`need ${match.participantKinds.length} controllers (one per participant), got ${controllers.length}`);
   }
-  return beginRound({ match, controllers: [...controllers], stage: 'playing', ready: [], clocks: { viewMsLeft: null, decisionMs: 0, graceMs: 0, banksMs: [] } });
+  return beginRound({ match, controllers: [...controllers], stage: 'playing', ready: [], clocks: { graceMs: 0, banksMs: [] } });
 }
 
 function startPlaying(h: HostState): HostState {
-  return { ...h, stage: 'playing', clocks: { ...h.clocks, viewMsLeft: null, decisionMs: 0, graceMs: 0 } };
+  return { ...h, stage: 'playing', clocks: { ...h.clocks, graceMs: 0 } };
 }
 
-/** Applies an action to the round and resets the per-decision clocks; settles the round when it ended. */
+/** Applies an action to the round and resets the grace clock; settles the round when it ended. */
 function applyAction(h: HostState, seat: number, action: Action): HostState {
   const match = matchApply(h.match, seat, action);
   const stage: HostStage = match.round.phase === 'done' ? (match.finished ? 'finished' : 'betweenRounds') : h.stage;
-  return { ...h, match, stage, clocks: { ...h.clocks, decisionMs: 0, graceMs: 0 } };
+  return { ...h, match, stage, clocks: { ...h.clocks, graceMs: 0 } };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -130,10 +131,10 @@ export function hostReady(h: HostState, participant: number): HostState {
   return humansAtTable(next).every((p) => ready[p]) ? startPlaying(next) : next;
 }
 
-/** Starts the next round after a round was settled. */
-export function hostContinue(h: HostState): HostState {
+/** Starts the next round after a round was settled. `deck` is an optional full deck order for the new deal. */
+export function hostContinue(h: HostState, deck?: CardId[]): HostState {
   if (h.stage !== 'betweenRounds') return illegal('no round has just ended');
-  return beginRound({ ...h, match: nextRound(h.match) });
+  return beginRound({ ...h, match: nextRound(h.match, deck) });
 }
 
 /** Hands a participant to a bot (disconnect, AFK) or back to a human. */
@@ -166,10 +167,19 @@ function advanceOnce(h: HostState, ms: number, rng: Rng): { host: HostState; use
   if (h.stage === 'betweenRounds') return { host: elapse(h, ms), used: ms };
 
   if (h.stage === 'viewing') {
-    const left = h.clocks.viewMsLeft ?? 0;
+    // Every human who has not pressed Ready spends their own time. Someone whose time runs out is ready automatically.
+    const waiting = humansAtTable(h).filter((p) => !h.ready[p]);
+    if (waiting.length === 0) return { host: startPlaying(h), used: 0 };
+    const left = Math.min(...waiting.map((p) => h.clocks.banksMs[p] ?? 0));
     const use = Math.min(ms, left);
-    let next = withClocks(elapse(h, use), { viewMsLeft: left - use });
-    if (left - use <= 0) next = startPlaying(next);
+    const banksMs = [...h.clocks.banksMs];
+    const ready = [...h.ready];
+    for (const p of waiting) {
+      banksMs[p] = (banksMs[p] ?? 0) - use;
+      if (banksMs[p]! <= 0) ready[p] = true;
+    }
+    let next: HostState = { ...withClocks(elapse(h, use), { banksMs }), ready };
+    if (humansAtTable(next).every((p) => ready[p])) next = startPlaying(next);
     return { host: next, used: use };
   }
 
@@ -179,46 +189,41 @@ function advanceOnce(h: HostState, ms: number, rng: Rng): { host: HostState; use
   const p = h.match.table[seat]!;
   if (!isHuman(h, p)) return { host: elapse(h, ms), used: ms }; // bots are not timed
 
-  if (clockKind(round) === 'licitation') {
-    const limitSec = h.match.config.timers.licitationDecisionSeconds;
-    if (limitSec === null) return { host: elapse(h, ms), used: ms };
-    const limit = limitSec * 1000;
-    const use = Math.min(ms, Math.max(0, limit - h.clocks.decisionMs));
-    let next = withClocks(elapse(h, use), { decisionMs: h.clocks.decisionMs + use });
-    if (h.clocks.decisionMs + use >= limit) {
-      const t = timeoutAction(next.match.round)!;
-      next = applyAction(next, t.actor, t.action);
-    }
-    return { host: next, used: use };
-  }
-
-  // Bank time (from the king call on).
   const bank = h.clocks.banksMs[p];
   if (bank === null || bank === undefined) return { host: elapse(h, ms), used: ms };
+  const kind = clockKind(round);
+
   if (bank > 0) {
     const use = Math.min(ms, bank);
     const banksMs = [...h.clocks.banksMs];
     banksMs[p] = bank - use;
     let next = withClocks(elapse(h, use), { banksMs });
-    if (bank - use === 0 && bankExpiryOutcome(next.match.round, seat) === 'forfeit') {
+    if (bank - use === 0 && kind === 'bank' && bankExpiryOutcome(next.match.round, seat) === 'forfeit') {
       next = applyAction(next, seat, { type: 'forfeit' });
     }
     return { host: next, used: use };
   }
-  // Empty bank: 10 seconds per turn, then a random legal move.
+
+  // Empty reserve: 10 seconds per turn, then the default action (licitation), forfeit (1v3 declarer) or a random legal move.
   const graceLimit = GRACE_SECONDS * 1000;
   const use = Math.min(ms, Math.max(0, graceLimit - h.clocks.graceMs));
   let next = withClocks(elapse(h, use), { graceMs: h.clocks.graceMs + use });
   if (h.clocks.graceMs + use >= graceLimit) {
-    const a = randomAction(next.match.round, rng);
-    next = applyAction(next, a.actor, a.action);
+    if (kind === 'licitation') {
+      const t = timeoutAction(next.match.round)!;
+      next = applyAction(next, t.actor, t.action);
+    } else if (bankExpiryOutcome(next.match.round, seat) === 'forfeit') {
+      next = applyAction(next, seat, { type: 'forfeit' });
+    } else {
+      const a = randomAction(next.match.round, rng);
+      next = applyAction(next, a.actor, a.action);
+    }
   }
   return { host: next, used: use };
 }
 
 /**
- * Real time passes. Charges the waiting human's clock and applies what the rules say when it runs out:
- * licitation timeout default, forfeit of a 1v3 declarer with an empty bank, random move after the grace period.
+ * Real time passes. Charges the waiting humans' time and applies what the rules say when it runs out.
  * Also counts towards the match time limit. A long tick (a suspended tab) is processed event by event.
  */
 export function hostTick(h: HostState, ms: number, rng: Rng): HostState {
@@ -233,8 +238,8 @@ export function hostTick(h: HostState, ms: number, rng: Rng): HostState {
 }
 
 /**
- * Milliseconds until the next moment `hostTick` would change something (a clock runs out, the match time limit
- * is reached), or null when nothing is waiting. A server can set one alarm from this; a UI can skip polling.
+ * Milliseconds until the next moment `hostTick` would change something (a reserve runs out, the grace period ends,
+ * the match time limit is reached), or null when nothing is waiting. A server can set one alarm from this.
  */
 export function hostNextDeadlineMs(h: HostState): number | null {
   if (h.stage === 'finished') return null;
@@ -244,20 +249,14 @@ export function hostNextDeadlineMs(h: HostState): number | null {
     if (m.config.winCondition.kind === 'timeLimit') out.push(m.config.winCondition.minutes * 60_000 - m.elapsedMs);
     if (m.config.failSafeMinutes !== null) out.push(m.config.failSafeMinutes * 60_000 - m.elapsedMs);
   }
-  if (h.stage === 'viewing') out.push(h.clocks.viewMsLeft ?? 0);
+  if (h.stage === 'viewing') {
+    const waiting = humansAtTable(h).filter((p) => !h.ready[p]);
+    if (waiting.length > 0) out.push(Math.min(...waiting.map((p) => h.clocks.banksMs[p] ?? 0)));
+  }
   const acting = actorParticipant(h);
   if (acting !== null && isHuman(h, acting)) {
-    const seat = m.table.indexOf(acting);
-    if (clockKind(m.round) === 'licitation') {
-      const sec = m.config.timers.licitationDecisionSeconds;
-      if (sec !== null) out.push(sec * 1000 - h.clocks.decisionMs);
-    } else {
-      const bank = h.clocks.banksMs[acting];
-      if (bank !== null && bank !== undefined) {
-        if (bank > 0) out.push(bank);
-        else out.push(bankExpiryOutcome(m.round, seat) === 'forfeit' ? 0 : GRACE_SECONDS * 1000 - h.clocks.graceMs);
-      }
-    }
+    const bank = h.clocks.banksMs[acting];
+    if (bank !== null && bank !== undefined) out.push(bank > 0 ? bank : GRACE_SECONDS * 1000 - h.clocks.graceMs);
   }
   return out.length === 0 ? null : Math.max(0, Math.min(...out));
 }
@@ -343,16 +342,14 @@ export interface HostView {
   finished: boolean;
   winners: number[];
   timers: {
-    /** Time left to look at the cards. */
-    viewMsLeft: number | null;
-    /** Time left for the current licitation decision. */
-    decisionMsLeft: number | null;
-    /** Bank per participant. */
+    /** Time reserve per participant (snapshot; a client may count down the `draining` ones locally). */
     banksMs: (number | null)[];
-    /** Time left on the current turn once a bank is empty. */
+    /** Time left on the current turn once the reserve is empty. */
     graceMsLeft: number | null;
-    /** Participant whose clock is running, or null. */
+    /** Participant whose turn it is and who is a human (playing stage), or null. */
     actingParticipant: number | null;
+    /** Participants whose reserve is running right now: the unready humans while viewing, the acting human while playing. */
+    draining: number[];
     /** Time until the match time limit / fail-safe (the current round is then finished), or null. */
     matchMsLeft: number | null;
   };
@@ -364,13 +361,16 @@ export function hostView(h: HostState, participant: number): HostView {
   const round = viewFor(m.round, seat ?? -1);
   const acting = actorParticipant(h);
   const actingHuman = acting !== null && isHuman(h, acting);
-  const kind = h.stage === 'playing' ? clockKind(m.round) : null;
-  const limitSec = m.config.timers.licitationDecisionSeconds;
   const bank = acting !== null ? h.clocks.banksMs[acting] ?? null : null;
 
   const limits: number[] = [];
   if (m.config.winCondition.kind === 'timeLimit') limits.push(m.config.winCondition.minutes * 60_000);
   if (m.config.failSafeMinutes !== null) limits.push(m.config.failSafeMinutes * 60_000);
+
+  const draining =
+    h.stage === 'viewing' ? humansAtTable(h).filter((p) => !h.ready[p])
+    : actingHuman && bank !== null && bank > 0 ? [acting as number]
+    : [];
 
   return {
     participant, seat,
@@ -393,11 +393,10 @@ export function hostView(h: HostState, participant: number): HostView {
     finished: m.finished,
     winners: m.winners,
     timers: {
-      viewMsLeft: h.stage === 'viewing' ? h.clocks.viewMsLeft : null,
-      decisionMsLeft: actingHuman && kind === 'licitation' && limitSec !== null ? Math.max(0, limitSec * 1000 - h.clocks.decisionMs) : null,
       banksMs: h.clocks.banksMs,
-      graceMsLeft: actingHuman && kind === 'bank' && bank === 0 ? Math.max(0, GRACE_SECONDS * 1000 - h.clocks.graceMs) : null,
+      graceMsLeft: actingHuman && bank === 0 ? Math.max(0, GRACE_SECONDS * 1000 - h.clocks.graceMs) : null,
       actingParticipant: actingHuman ? acting : null,
+      draining,
       matchMsLeft: limits.length > 0 && !m.finished ? Math.max(0, Math.min(...limits) - m.elapsedMs) : null,
     },
   };

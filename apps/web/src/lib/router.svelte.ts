@@ -1,20 +1,22 @@
-/** Tiny hash router: #/ #/setup #/options #/rules #/online #/game */
-export type Route = 'menu' | 'setup' | 'options' | 'rules' | 'online' | 'game';
-const ROUTES = ['setup', 'options', 'rules', 'online', 'game'] as const;
+/** Tiny hash router: #/ #/setup #/options #/rules #/online #/game #/room/CODE */
+export type Route = 'menu' | 'setup' | 'options' | 'rules' | 'online' | 'game' | 'room';
+const ROUTES = ['setup', 'options', 'rules', 'online', 'game', 'room'] as const;
 
-const parse = (): Route => {
-  const h = location.hash.replace(/^#\/?/, '');
-  return ROUTES.find((r) => r === h) ?? 'menu';
+const parse = (): { route: Route; param: string } => {
+  const [name = '', param = ''] = location.hash.replace(/^#\/?/, '').split('/');
+  return { route: ROUTES.find((r) => r === name) ?? 'menu', param };
 };
 
-export const router = $state<{ route: Route }>({ route: parse() });
+export const router = $state<{ route: Route; param: string }>(parse());
 
 if (typeof window !== 'undefined') {
   window.addEventListener('hashchange', () => {
-    router.route = parse();
+    const p = parse();
+    router.route = p.route;
+    router.param = p.param;
   });
 }
 
-export function go(route: Route): void {
-  location.hash = route === 'menu' ? '#/' : `#/${route}`;
+export function go(route: Route, param = ''): void {
+  location.hash = route === 'menu' ? '#/' : `#/${route}${param ? `/${param}` : ''}`;
 }

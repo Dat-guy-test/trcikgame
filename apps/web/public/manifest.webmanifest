@@ -1,0 +1,11 @@
+{
+  "name": "Tarok",
+  "short_name": "Tarok",
+  "description": "Slovenian-style Tarok for 2 to 8 players",
+  "start_url": ".",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#1d3a3c",
+  "theme_color": "#1d3a3c",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

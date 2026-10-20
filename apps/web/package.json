@@ -13,7 +13,8 @@
   },
   "dependencies": {
     "@tarok/ai": "workspace:*",
-    "@tarok/engine": "workspace:*"
+    "@tarok/engine": "workspace:*",
+    "@tarok/protocol": "workspace:*"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^4.0.0",

@@ -1,4 +1,4 @@
-/** Match configuration types. See docs/rules.md (match structure and timers). */
+/** Match configuration types. See docs/rules.md (match structure and time). */
 
 export type WinCondition =
   | { kind: 'targetScore'; target: number }
@@ -6,11 +6,10 @@ export type WinCondition =
   | { kind: 'timeLimit'; minutes: number };
 
 export interface TimerConfig {
-  /** Shared card-viewing time when hands are revealed. */
-  viewSeconds: number | null;
-  /** Per-decision limit before and during licitation. */
-  licitationDecisionSeconds: number | null;
-  /** Per-player, per-round bank. `'auto'` uses defaultBankSeconds(regularPlayers). */
+  /**
+   * The one time reserve every human player has per round. Card viewing, bidding, declarations, contra and card play all
+   * draw on it. `'auto'` uses defaultBankSeconds(regularPlayers); `null` switches all clocks off.
+   */
   bankSeconds: number | 'auto' | null;
 }
 
@@ -25,17 +24,13 @@ export interface MatchConfig {
   timers: TimerConfig;
 }
 
-export const DEFAULT_TIMERS: TimerConfig = {
-  viewSeconds: 3 * 60,
-  licitationDecisionSeconds: 20,
-  bankSeconds: 'auto',
-};
+export const DEFAULT_TIMERS: TimerConfig = { bankSeconds: 'auto' };
 
-/** 20 min for 2 players, 15 min for 3, 10 min for 4 or more (regular players only). */
+/** 30 min for 2 players, 20 min for 3, 15 min for 4 or more (regular players only). */
 export function defaultBankSeconds(regularPlayers: number): number {
-  if (regularPlayers <= 2) return 20 * 60;
-  if (regularPlayers === 3) return 15 * 60;
-  return 10 * 60;
+  if (regularPlayers <= 2) return 30 * 60;
+  if (regularPlayers === 3) return 20 * 60;
+  return 15 * 60;
 }
 
 export function resolveBankSeconds(cfg: MatchConfig): number | null {

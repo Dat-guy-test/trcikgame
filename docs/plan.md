@@ -1,7 +1,8 @@
 # Tarok website: Plan and progress
 
 Merges the original `Plan.txt` with the progress made so far. Rules live in `rules.md`.
-Last updated after milestone 5 (placeholder web UI, first fixes from real-device testing).
+Last updated after milestone 8 (single time reserve, hosting preparation, online rooms). Milestones 6 to 8 were written without a build
+environment: nothing in them has been compiled or run yet (see section 9, milestone 8, and section 10).
 
 **Goals:** unbloated, as smooth as possible, perfectly mobile compatible.
 **Features:** main menu (name, options, rules + PDF, local game, online game, language switch), configurable
@@ -23,8 +24,9 @@ question in the original plan. It needs heavy bidding, bonus and partnership log
 | 3 | Local game UI | **Placeholder done**: fully playable, art and layout are placeholders |
 | 4 | Menus, settings and i18n framework | **Done** for English and Polish (typed keys, lazy language chunk, CI-style key check) |
 | 5 | Rules notebook and PDF pipeline | Notebook screen renders `docs/rules.md` (English only); PDF not started |
-| 6 | Online hosting | Not started |
-| 7 | Matchmaking and polish | Not started |
+| 6 | Online hosting | **Written, untested**: protocol, room server (Cloudflare Durable Object), lobby and room UI, secure shuffle; create / join rooms by code or link, no automatic matchmaking |
+| 6a | Hosting preparation | **Done (untested)**: relative base, GitHub Pages workflow, CI workflow, `docs/hosting.md`, Wake Lock, web manifest |
+| 7 | Automatic matchmaking and polish | Not started (matchmaking deliberately not wanted for now) |
 
 ---
 
@@ -66,10 +68,10 @@ seeded PRNG. It knows nothing about the DOM or the network.
 packages/
   engine/      pure rules, state machine, scoring, variants (shared)      <- real work so far
   ai/          bot strategies + tournament harness (shared)               <- first version
-  protocol/    message types + validation (shared client/server)          <- placeholder
+  protocol/    message types + validation (shared client/server)          <- written (milestone 8)
 apps/
   web/         Svelte SPA: menu, settings, local and online UIs           <- placeholder
-  server/      Cloudflare Worker + Durable Object "Room"                  <- not created yet
+  server/      Cloudflare Worker + Durable Object "Room"                  <- written (milestone 8)
 content/
   rules/<lang>/*.md    rules notebook source (single source of truth)
   i18n/<lang>.json     UI strings
@@ -102,8 +104,7 @@ render to the in-app notebook (HTML) and a downloadable PDF (Typst or Pandoc).
 a queue Durable Object that fills empty seats with bots after a timeout. Handle reconnects (session token in localStorage), turn
 timers and AFK-to-bot takeover.
 
-**Timers in the UI:** show the shared card-viewing clock, the per-decision licitation clock, each player's bank and a grace-period
-indicator; a "no contra" button; a "ready" button during card viewing; match time-limit banner ("finishing this round").
+**Timers in the UI:** show each player's time reserve (it also pays for card viewing and bidding) and a grace-period indicator; a "no contra" button; a "ready" button during card viewing; match time-limit banner ("finishing this round").
 
 ---
 
@@ -279,20 +280,57 @@ protocol (short keys, MessagePack later if needed).
   `rules.md` section 9 was updated.
 - Tests: engine 147, ai 12, web 9. Typecheck clean.
 
+### Milestone 6: one time reserve (done, untested)
+- All separate timers are gone. Each human has one **time** reserve per round (30 min with 2 players, 20 with 3, 15 with 4 or more) that pays for card viewing,
+  bidding, declarations, contra and card play. `TimerConfig` is now just `{ bankSeconds }`; `viewSeconds` and `licitationDecisionSeconds` were removed.
+- Card viewing still has a Ready button; every unready human pays from their own time, and running out counts as ready. With clocks off there is no viewing stage.
+- Empty time: 10 s grace per turn, then the default action in bidding / declaration / contra, a random legal move from the king call on, and forfeit for a
+  1v3 declarer (immediately when the reserve reaches zero during play, after the grace when it was already empty on entering play).
+- `HostView.timers` is now `{ banksMs, graceMsLeft, actingParticipant, draining, matchMsLeft }` (`draining` lets a client count the running clocks down locally).
+- "Bank" renamed "time" in the UI (`clock.time`), `rules.md` sections 1.5 and 10.2 rewritten, `rules.md` and `docs/rules.md` kept identical.
+- Tests: `host.test.ts` rewritten for the new clocks (viewing is paid from the reserve, bidding drains it, grace then pass, forfeit after grace), `bidding.test.ts` defaults updated.
+
+### Milestone 7: ready for hosting (done, untested)
+- **Secure deal.** `deal(seed, deck?)`, `secureDeck()` (Web Crypto shuffle), `RoundConfig.deck`, and an optional `deck` argument on `createMatch`, `nextRound`,
+  `createHost` and `hostContinue`. Local play still uses seeds. Tests in `online.test.ts`.
+- `apps/web/vite.config.ts` uses `base: './'` (works under a GitHub Pages sub-path; the router is hash-based). `tools/check-bundle.mjs` understands relative asset paths.
+- `.github/workflows/pages.yml` (build, i18n check, bundle budget, deploy to GitHub Pages) and `ci.yml` (typecheck, i18n, tests).
+- Wake Lock while a game is open (`lib/wakeLock.ts`), `manifest.webmanifest` and an SVG icon (installable on Android in principle; no service worker yet, so no offline mode).
+- `docs/hosting.md`: step-by-step for GitHub Pages, Cloudflare Workers, alternatives, local development.
+
+### Milestone 8: online rooms (written, untested)
+- **`@tarok/protocol`**: `ClientMessage` (join, act, ready, next, slot, start, ping) and `ServerMessage` (welcome, lobby, state, error, pong); a hand-written validator rebuilds
+  clean actions from untrusted JSON (`forfeit` is never accepted), room settings validation, room codes without look-alike characters. Tests included.
+- **`apps/server`**: Worker (`POST /api/rooms`, `GET /api/rooms/:code/info`, `GET /api/rooms/:code/ws`, CORS and origin check via `ALLOWED_ORIGIN`) and a SQLite-backed Durable Object per
+  room. All room logic lives in `roomCore.ts` without Cloudflare types and has Node tests (lobby rules, whole match with two humans + bots + a spectator, no hidden-hand leaks,
+  takeover and reconnect, frozen empty room).
+- **Rooms.** The creator gets a secret token and becomes the host. Others join by link or code and take free seats; the host can turn free seats into bots and starts the game once every
+  seat is filled. Latecomers after the start and extra visitors are spectators (public view, no hands). The server deals from `secureDeck()`, validates every intent, runs the engine host,
+  drives the clocks from one alarm (`hostNextDeadlineMs`), paces bots (0.7 s, 1.6 s after a finished trick) and sends each connection only its own `hostView`.
+- **Reconnects.** The seat token is kept in the browser. A human who is offline for 20 s is replaced by a bot (`hostSetController`) and gets the seat back on reconnect; a second tab
+  replaces the first. A room with nobody connected is frozen (no clocks, no bots); rooms untouched for 24 h delete themselves. State is persisted as JSON after every change.
+- **Next round** starts when every human has pressed it (a room with only bots continues by itself).
+- **Web client.** `OnlineGame` (WebSocket client with the same surface as the local `Game`, local count-down of running clocks, trick display pause), `GameLike` interface so the game screen is shared,
+  `screens/Online.svelte` (name, room settings, create, join by code, server address) and `screens/Room.svelte` (name prompt, lobby with seats and invite link, then the game),
+  hash route `#/room/CODE`. 30 new UI keys in English and Polish.
+- **Not done on purpose:** automatic matchmaking, accounts, chat, taking over an abandoned seat as a new player, rate limiting.
+- **Known gaps:** `replayMatch` cannot reproduce online matches (the decks are not logged); the client has no UI test for the online screens; the server persists the whole state on every
+  move (fine for testing, worth throttling later); standard (non-hibernating) WebSockets are used, which keeps rooms simple but bills duration while connected.
+
 ---
 
 ## 10. Next expected step
 
-1. **Look at it on a real phone and fix the layout** (the only part not verified), then replace `Card.svelte` and the colours with the real art; add Wake Lock,
-   PWA manifest and service worker (`vite-plugin-pwa`), Playwright screenshots at phone sizes in CI.
-2. Rules notebook per language and the PDF pipeline (step 5); Polish rules text.
-3. **Before online play (step 6), engine-side:** make the deal unpredictable. `deal(seed)` uses a 32-bit seeded PRNG: a client that knows its own 12 cards could
-   search all 2^32 seeds and recover every hidden hand. Online rooms must shuffle from a cryptographic source (accept a full deck order in `newRound`, keep
-   the seed for tests and local play) and never send `MatchState` / `HostState` to a client, only `hostView`.
-4. Online (step 6): `packages/protocol` (intents in, `HostView` out, versioned and validated), `apps/server` (Durable Object per room running the host, one alarm
-   from `hostNextDeadlineMs`, state persisted as JSON, reconnect with a session token, AFK to bot with `hostSetController`), lobby UI replacing the placeholder
-   screen; the `Game` class becomes a thin WebSocket client with the same `act / ready / next`.
-5. Ongoing bot work: tune other thresholds with forced benchmarks, defence in called-king games, optional ISMCTS.
+1. **Run everything once.** Milestones 6 to 8 were written without a Node environment. Extract the zip over the repo, run `node tools/apply-changes.mjs`, `pnpm install`, then
+   `pnpm typecheck && pnpm test && pnpm i18n` and fix whatever the compiler or tests report (most likely spots: Svelte 5 typing in `online.svelte.ts` / `Room.svelte`, the
+   `cloudflare:workers` types in `apps/server`, and the wrangler version in `apps/server/package.json`).
+2. **Try it for real:** `pnpm server:dev` + `pnpm dev` with two browsers, then deploy following `docs/hosting.md` and play on two phones.
+3. **Look at it on a real phone and fix the layout** (still not verified), then replace `Card.svelte` and the colours with the real art; PWA service worker, Playwright screenshots at phone sizes in CI.
+4. Online follow-ups: UI tests for `Online` / `Room` with a fake WebSocket, Playwright test with two browsers against `wrangler dev`, rate limiting, hibernating WebSockets, throttled persistence,
+   optional chat, host kicking a player, sit-down for spectators when a seat frees up.
+5. Rules notebook per language and the PDF pipeline (step 5); Polish rules text.
+6. Ongoing bot work: tune other thresholds with forced benchmarks, defence in called-king games, optional ISMCTS.
+7. Later (step 7): automatic matchmaking with a queue Durable Object, if wanted.
 
 ---
 
@@ -304,5 +342,11 @@ New assumptions made in this milestone (easy to change):
 - Target-score matches continue while the top score is tied; first place is only decided by a unique leader at or above the target.
 - With more than 4 players the player in seat `round % 4` is swapped out each round (one spectator in, one player out); dummies are only used with 3 players.
 - `replayMatch` does not restore elapsed time (the `timeExpired` event restores its effect).
+
+New assumptions in milestones 6 to 8 (easy to change):
+
+- Card viewing is paid from the time reserve per player (not a shared clock); with clocks off there is no viewing stage.
+- A declarer who enters play with an empty reserve gets the 10 s grace before forfeiting; running out during play forfeits at once.
+- Online: a disconnected human is replaced by a bot after 20 s; "next round" needs every human; a room frozen while empty does not charge time; the creator of a room is its host for life.
 
 The 2-player variant is implemented; its assumptions are in `rules.md` section 12 (items 9 to 11).

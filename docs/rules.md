@@ -98,10 +98,10 @@ Kontra x2 (non-declarers), Rekontra x4 (declarer), Subcontra x8 (non-declarers),
 (declarer), then the chain ends (a setting can continue it). Rufer, Besser Rufer and Solo cannot be
 contra'd at all.
 
-### 1.5 Timers
+### 1.5 Time
 
-Card viewing 3 minutes (shared), 20 seconds per decision in licitation, a per-round bank of
-20 / 15 / 10 minutes for 2 / 3 / 4 or more players. See section 10.
+Every player has one time reserve per round: 30 minutes with 2 players, 20 with 3, 15 with 4 or more. Card viewing, bidding,
+declarations, contra and card play all draw on it; there are no separate timers. See section 10.
 
 ---
 
@@ -398,7 +398,7 @@ the others swap in after each round (with more than seven, a second table is bet
 - A **dummy** is an extra hand with its own score, shown on the scoreboard. Dummies always pass in bidding and are never the
   declarer. Their hand is revealed to everyone when play starts (after the declarer has taken from the Talon and discarded, or at once when there is no Talon stage).
 - With 3 players a dummy's cards are played by: the declarer (Rufer, Solo, Besser Rufer); the player who won the previous trick (Trischaken); or the
-  declarer's first regular opponent (all other contracts). Such decisions draw on the controller's bank.
+  declarer's first regular opponent (all other contracts). Such decisions draw on the controller's time.
 - Dummy seats stay in a fixed place in turn order. The starting-player role skips them: if it would land on a dummy it goes to
   the next regular player in line.
 - When a match ends, dummies are skipped when deciding the winner and 2nd / 3rd place.
@@ -425,18 +425,22 @@ A match is a sequence of rounds with a win condition: a target score, a number o
 runs out the current round is finished, then the match ends). Any mode may also have an optional **fail-safe time limit**
 with the same behaviour. Only **regular players'** scores can end a score-based match.
 
-### 10.2 Timers (all configurable, can be off)
+### 10.2 Time (configurable, can be off)
 
-1. **Card viewing:** when hands are revealed, all players share **3 minutes**; bidding starts when it runs out or earlier
-   when all human players are ready.
-2. **Licitation:** at most **20 seconds per decision** for bids, confirm/raise, declarations and contra. In the contra window a
-   player can answer "no contra" to skip waiting. When 20 seconds run out: **pass, confirm the current contract, declare no
-   bonuses, no contra**.
-3. **Bank:** every player has a per-round bank, reset each round: **20 min** (2 players), **15 min** (3 players), **10 min**
-   (4 or more). It starts when licitation is over, **from and including the king call**, and ticks **only while the table
-   waits for that player's decision**. Dummy decisions drain the controller's bank. Bots are not timed.
-4. **Empty bank:** if the **declarer of a 1v3 game** (including a called-king declarer playing alone) runs out, they lose and
-   the round ends. Otherwise, each turn the player gets **10 seconds**, after which a **random legal move** is played.
+Every human player has **one time reserve per round**, reset each round: **30 min** (2 players), **20 min** (3 players),
+**15 min** (4 or more). Everything draws on it; there are no separate per-decision or card-viewing timers.
+
+1. **When it runs:** it ticks **only while the table waits for that player**: while they look at their cards before pressing
+   Ready, while it is their turn to bid, declare, answer contra, call, take, discard or play a card. Dummy decisions drain the
+   controller's time. Bots are not timed.
+2. **Card viewing:** when hands are revealed, every player who has not pressed **Ready** spends their own time. Bidding starts when
+   all human players are ready (a player whose time runs out counts as ready).
+3. **Empty time:** each turn the player then gets **10 seconds**. When they run out:
+   - in bidding, declarations and contra: **pass, confirm the current contract, declare no bonuses, no contra**;
+   - from the king call on: a **random legal move** is played;
+   - if the **declarer of a 1v3 game** (including a called-king declarer playing alone) runs out of time from the king call on,
+     they lose and the round ends. (This happens at once when the reserve reaches zero during play, or after the 10 seconds if
+     the reserve was already empty when the king call came.)
 
 ---
 

@@ -1,0 +1,17 @@
+name = "tarok-server"
+main = "src/index.ts"
+compatibility_date = "2025-01-15"
+
+# One Durable Object per room (SQLite-backed, which is what the free plan supports).
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "Room"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]
+
+[vars]
+# Which websites may talk to this server: comma-separated origins, e.g. "https://your-name.github.io".
+# "*" allows everything (fine for testing, tighten it before sharing widely).
+ALLOWED_ORIGIN = "*"

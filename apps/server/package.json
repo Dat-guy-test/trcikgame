@@ -1,0 +1,21 @@
+{
+  "name": "@tarok/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "cf:deploy": "wrangler deploy",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tarok/ai": "workspace:*",
+    "@tarok/engine": "workspace:*",
+    "@tarok/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250109.0",
+    "wrangler": "^4.0.0"
+  }
+}
