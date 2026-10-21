@@ -4,11 +4,10 @@
  * Pure and JSON-serialisable like the round. The host drives real time through `addElapsed`.
  * See docs/rules.md section 10.1.
  */
+import type { CardId } from './cards';
 import type { MatchConfig } from './config';
 import { IllegalAction, apply, newRound, type Action } from './round';
 import { nextStartingPlayer, type RoundResult, type RoundState, type SeatKind } from './state';
-import type { CardId } from './cards';
-import type { MatchConfig } from './config';
 
 export interface Placing {
   /** Participant index (equal to the seat with 4 or fewer players). */
@@ -97,12 +96,12 @@ function validateWinCondition(cfg: MatchConfig): void {
   if (cfg.failSafeMinutes !== null && !(cfg.failSafeMinutes > 0)) bad('fail-safe minutes must be positive');
 }
 
-/** Regular players ranked by score (dummies are skipped). */
 /** Rounds that count towards a rounds limit: reshuffled deals (2-player variant) do not. */
 export function playedRounds(m: Pick<MatchState, 'history'>): number {
   return m.history.filter((r) => r.result.kind !== 'reshuffle').length;
 }
 
+/** Regular players ranked by score (dummies are skipped). */
 export function placings(standings: readonly number[], kinds: readonly SeatKind[]): Placing[] {
   const regs = standings.map((_, seat) => seat)
     .filter((seat) => kinds[seat] === 'player')

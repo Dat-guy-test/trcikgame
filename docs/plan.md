@@ -1,7 +1,7 @@
 # Tarok website: Plan and progress
 
 Merges the original `Plan.txt` with the progress made so far. Rules live in `rules.md`.
-Last updated after milestone 11 (play-obligation fix and mobile "Your turn" label). Milestones 6 to 11 were written without a build
+Last updated after milestone 12 (CI typecheck fix: duplicate import in `match.ts`). Milestones 6 to 12 were written without a build
 environment: nothing in them has been compiled or run by the author yet (see section 9 and section 10).
 
 **Goals:** unbloated, as smooth as possible, perfectly mobile compatible.
@@ -24,11 +24,12 @@ question in the original plan. It needs heavy bidding, bonus and partnership log
 | 3 | Local game UI | **Placeholder done**: fully playable, art and layout are placeholders |
 | 4 | Menus, settings and i18n framework | **Done** for English and Polish (typed keys, lazy language chunk, key check) |
 | 5 | Rules notebook and PDF pipeline | Notebook screen renders `docs/rules.md` (English only); PDF not started |
-| 6 | Online hosting | **Written, untested**: protocol, room server (Cloudflare Durable Object), lobby and room UI, secure shuffle; rooms by code or link, no automatic matchmaking |
-| 6a | Hosting preparation | **Done (untested)**: relative base, GitHub Pages workflow, CI workflow, `docs/hosting.md`, Wake Lock, web manifest |
-| 6b | CI / deployment repair | **Done (not yet re-run)**: CORS origin and workspace config fixed (milestone 9) |
-| 6c | Online game screen fix | **Done (not yet re-run)**: `GameScreen` now renders the online game instead of a local one (milestone 10) |
-| 6d | Play-obligation fix and mobile polish | **Done (not yet re-run)**: tarock obligation applies in Farben too; "Your turn" label hidden on small screens (milestone 11) |
+| 6 | Online hosting | **Written, deployed, works**: protocol, room server (Cloudflare Durable Object), lobby and room UI, secure shuffle; rooms by code or link, no automatic matchmaking |
+| 6a | Hosting preparation | **Done**: relative base, GitHub Pages workflow, CI workflow, `docs/hosting.md`, Wake Lock, web manifest |
+| 6b | CI / deployment repair | **Done** (milestone 9) |
+| 6c | Online game screen fix | **Done** (milestone 10) |
+| 6d | Play-obligation fix and mobile polish | **Done** (milestone 11) |
+| 6e | CI typecheck repair | **Done, not yet re-run** (milestone 12): duplicate `MatchConfig` import in `match.ts` |
 | 7 | Automatic matchmaking and polish | Not started (matchmaking deliberately not wanted for now) |
 
 ---
@@ -281,23 +282,32 @@ Farben only changes who *wins* a trick (tarocks do not trump, no Pagat exception
 - `apps/web/src/app.css`: under 600 px width the label is hidden (`[data-testid='actions'] .status > strong`). The active seat highlight, the time clock and the grace clock remain. The label is unchanged on larger screens.
 - If the pop-up meant something else (for example the result dialog or the panel as a whole), tell me which and it can be adjusted.
 
+### Milestone 12: CI typecheck repair (done, not yet re-run)
+**Symptom:** the `typecheck` step of `ci.yml` failed in `packages/engine` with `src/match.ts(7,15)` and `src/match.ts(11,15)`: `error TS2300: Duplicate identifier 'MatchConfig'`
+(the two errors plus the failed-command line are the "three errors" in the log).
+**Cause:** the milestone 7 to 10 edits added `import type { CardId }` and a second `import type { MatchConfig } from './config'` to `match.ts` without removing the
+original one. The duplicate had already been noted in section 10 of the previous plan.
+**Fix:** `packages/engine/src/match.ts` now has one import of each type (`CardId`, `MatchConfig`). Nothing else in the file changed except a misplaced doc comment:
+the "Regular players ranked by score" comment sat above `playedRounds` instead of `placings`; it now sits above `placings`.
+**Caveat:** `pnpm -r typecheck` stops at the first failing package, so `packages/ai`, `packages/protocol`, `apps/server` and `apps/web` have not been type-checked
+by CI yet. Further errors may appear on the next run (section 10, step 1). The fix was not compiled by the author.
+
 ---
 
 ## 10. Next expected step
 
-1. **Re-run CI.** Run `pnpm typecheck && pnpm i18n && pnpm test` locally first if possible, then push. The first run may still reveal errors that were hidden behind
-   earlier failures (pnpm stops at the first failing package). Most likely spots: Svelte 5 typing in `online.svelte.ts` / `Room.svelte`, the `cloudflare:workers` types
-   in `apps/server`, and the wrangler version. Note: `match.ts` imports `MatchConfig` twice (duplicate import); remove one if the typecheck complains.
-2. **Deploy and verify online play:** `pnpm server:deploy`, set the repository variable `VITE_SERVER_URL` (or paste the Workers URL under *Play online -> Server address*),
-   enable Pages (Source: GitHub Actions). Create a room on one phone, join on another, press Start: both should see the same table (hands differ, scoreboard shared,
-   the other human is not a bot). Check `https://<worker>.workers.dev/` shows `tarok server ok` and that creating a room does not return 403.
-3. **Add the missing UI test:** a jsdom test for `Room.svelte` / `GameScreen` with a fake `GameLike` (and a fake WebSocket) so this regression cannot return.
+1. **Re-run CI.** Run `pnpm typecheck && pnpm i18n && pnpm test` locally first if possible, then push. The duplicate import in `match.ts` is fixed, but the first
+   run may still reveal errors hidden behind it (pnpm stops at the first failing package). To see all of them at once use `pnpm -r --no-bail typecheck`.
+   Most likely spots: Svelte 5 typing in `online.svelte.ts` / `Room.svelte`, the `cloudflare:workers` types in `apps/server`, and the wrangler version.
+2. **Online play is deployed and working.** Remaining checks: a second device joining the same room, reconnect after closing a tab, spectator view.
+3. **Add the missing UI test:** a jsdom test for `Room.svelte` / `GameScreen` with a fake `GameLike` (and a fake WebSocket) so the milestone 10 regression cannot return.
 4. **Look at it on a real phone and fix the layout**, then replace `Card.svelte` and the colours with the real art; PWA service worker, Playwright screenshots in CI.
 5. Online follow-ups: Playwright test with two browsers against `wrangler dev`, rate limiting, hibernating WebSockets, throttled persistence, optional chat,
    host kicking a player, sit-down for spectators when a seat frees up.
 6. Rules notebook per language and the PDF pipeline (step 5); Polish rules text.
 7. Ongoing bot work: tune other thresholds with forced benchmarks (Farben again after milestone 11), defence in called-king games, optional ISMCTS.
 8. Later (step 7): automatic matchmaking with a queue Durable Object, if wanted.
+9. Housekeeping: delete `tools/apply-changes.mjs`.
 
 ---
 
