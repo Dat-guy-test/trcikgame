@@ -58,7 +58,7 @@ export class Room extends DurableObject<Env> {
     );
   }
 
-  async fetch(req: Request): Promise<Response> {
+  override async fetch(req: Request): Promise<Response> {
     const path = new URL(req.url).pathname;
 
     if (path.endsWith('/init') && req.method === 'POST') {
@@ -119,7 +119,7 @@ export class Room extends DurableObject<Env> {
     void this.ctx.storage.setAlarm(next === null ? cleanup : Math.min(next, cleanup));
   }
 
-  async alarm(): Promise<void> {
+  override async alarm(): Promise<void> {
     const core = this.core;
     if (!core) return;
     if (core.connectionCount === 0 && Date.now() >= core.data.touched + IDLE_DELETE_MS) {

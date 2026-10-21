@@ -1,7 +1,7 @@
 # Tarok website: Plan and progress
 
 Merges the original `Plan.txt` with the progress made so far. Rules live in `rules.md`.
-Last updated after milestone 12 (CI typecheck fix: duplicate import in `match.ts`). Milestones 6 to 12 were written without a build
+Last updated after milestone 13 (CI typecheck fix: `override` modifiers in `apps/server/src/room.ts`). Milestones 6 to 13 were written without a build
 environment: nothing in them has been compiled or run by the author yet (see section 9 and section 10).
 
 **Goals:** unbloated, as smooth as possible, perfectly mobile compatible.
@@ -30,6 +30,7 @@ question in the original plan. It needs heavy bidding, bonus and partnership log
 | 6c | Online game screen fix | **Done** (milestone 10) |
 | 6d | Play-obligation fix and mobile polish | **Done** (milestone 11) |
 | 6e | CI typecheck repair | **Done, not yet re-run** (milestone 12): duplicate `MatchConfig` import in `match.ts` |
+| 6f | CI typecheck repair, part 2 | **Done, not yet re-run** (milestone 13): missing `override` modifiers in `room.ts` |
 | 7 | Automatic matchmaking and polish | Not started (matchmaking deliberately not wanted for now) |
 
 ---
@@ -289,16 +290,21 @@ Farben only changes who *wins* a trick (tarocks do not trump, no Pagat exception
 original one. The duplicate had already been noted in section 10 of the previous plan.
 **Fix:** `packages/engine/src/match.ts` now has one import of each type (`CardId`, `MatchConfig`). Nothing else in the file changed except a misplaced doc comment:
 the "Regular players ranked by score" comment sat above `playedRounds` instead of `placings`; it now sits above `placings`.
-**Caveat:** `pnpm -r typecheck` stops at the first failing package, so `packages/ai`, `packages/protocol`, `apps/server` and `apps/web` have not been type-checked
-by CI yet. Further errors may appear on the next run (section 10, step 1). The fix was not compiled by the author.
+**Result:** `packages/engine`, `packages/ai` and `packages/protocol` now pass typecheck in CI. The next run failed in `apps/server` (milestone 13).
+
+### Milestone 13: CI typecheck repair, part 2 (done, not yet re-run)
+**Symptom:** `apps/server` typecheck failed: `src/room.ts(61,9)` and `src/room.ts(122,9)`: `error TS4114: This member must have an 'override' modifier because it overrides a member in the base class 'DurableObject<Env, {}>'`.
+**Cause:** `tsconfig.base.json` enables `noImplicitOverride`; the Durable Object class `Room extends DurableObject<Env>` defines `fetch` and `alarm`, which override base-class methods.
+**Fix:** `override async fetch(...)` and `override async alarm()` in `apps/server/src/room.ts`. No behaviour change.
+**Caveat:** `apps/web` (`svelte-check`) was started in the same CI run but was cut off by the server failure, so its result is still unknown. If it reports errors, they are the next thing to fix (section 10, step 1).
 
 ---
 
 ## 10. Next expected step
 
-1. **Re-run CI.** Run `pnpm typecheck && pnpm i18n && pnpm test` locally first if possible, then push. The duplicate import in `match.ts` is fixed, but the first
-   run may still reveal errors hidden behind it (pnpm stops at the first failing package). To see all of them at once use `pnpm -r --no-bail typecheck`.
-   Most likely spots: Svelte 5 typing in `online.svelte.ts` / `Room.svelte`, the `cloudflare:workers` types in `apps/server`, and the wrangler version.
+1. **Re-run CI.** Run `pnpm typecheck && pnpm i18n && pnpm test` locally first if possible, then push. Engine, ai and protocol pass; the `override` errors in `apps/server` are fixed,
+   but `apps/web` (`svelte-check`) has not finished in CI yet, and `pnpm i18n` and `pnpm test` have not run in CI at all. To see all typecheck errors at once use `pnpm -r --no-bail typecheck`.
+   Most likely spots: Svelte 5 typing in `online.svelte.ts` / `Room.svelte`, then failing tests.
 2. **Online play is deployed and working.** Remaining checks: a second device joining the same room, reconnect after closing a tab, spectator view.
 3. **Add the missing UI test:** a jsdom test for `Room.svelte` / `GameScreen` with a fake `GameLike` (and a fake WebSocket) so the milestone 10 regression cannot return.
 4. **Look at it on a real phone and fix the layout**, then replace `Card.svelte` and the colours with the real art; PWA service worker, Playwright screenshots in CI.
