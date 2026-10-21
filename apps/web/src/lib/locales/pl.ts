@@ -23,7 +23,7 @@ const pl: Record<keyof typeof en, string> = {
 
   'setup.title': 'Nowa gra lokalna',
   'setup.players': 'Gracze',
-  'setup.playersHint': 'Ty i {bots} botów, {dummies} kukieł',
+  'setup.playersHint': 'Ty i {bots} boty, {dummies} kukły',
   'setup.win': 'Mecz kończy się',
   'setup.win.rounds': 'po określonej liczbie rozdań',
   'setup.win.target': 'gdy ktoś osiągnie wynik',
