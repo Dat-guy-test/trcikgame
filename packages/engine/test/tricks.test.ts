@@ -67,10 +67,28 @@ describe('legalPlays (positive contracts)', () => {
     expect(legalPlays([H(2), tarock(4)], plays(tarock(7)), rules)).toEqual([tarock(4)]);
     expect(legalPlays([H(2), C(1)], plays(tarock(7)), rules)).toEqual([H(2), C(1)]);
   });
+});
 
-  it('Farben: with no card of the led suit, anything goes (no tarock obligation)', () => {
-    const hand = [H(2), tarock(4)];
-    expect(legalPlays(hand, plays(S(7)), { farben: true, negative: false })).toEqual(hand);
+describe('legalPlays (Farben: same obligations, tarocks just do not trump)', () => {
+  const rules = { farben: true, negative: false };
+
+  it('with no card of the led suit a tarock must still be played', () => {
+    expect(legalPlays([H(2), C(1), tarock(4)], plays(S(7)), rules)).toEqual([tarock(4)]);
+    expect(legalPlays([H(2), tarock(4), tarock(9)], plays(S(7)), rules)).toEqual([tarock(4), tarock(9)]);
+  });
+
+  it('must follow suit when possible', () => {
+    expect(legalPlays([S(0), H(2), tarock(4)], plays(S(7)), rules)).toEqual([S(0)]);
+  });
+
+  it('with neither suit nor tarocks anything goes', () => {
+    const hand = [H(2), C(1)];
+    expect(legalPlays(hand, plays(S(7)), rules)).toEqual(hand);
+  });
+
+  it('tarock led: follow with a tarock, else anything', () => {
+    expect(legalPlays([H(2), tarock(4)], plays(tarock(7)), rules)).toEqual([tarock(4)]);
+    expect(legalPlays([H(2), C(1)], plays(tarock(7)), rules)).toEqual([H(2), C(1)]);
   });
 });
 

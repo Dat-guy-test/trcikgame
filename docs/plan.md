@@ -1,7 +1,7 @@
 # Tarok website: Plan and progress
 
 Merges the original `Plan.txt` with the progress made so far. Rules live in `rules.md`.
-Last updated after milestone 10 (online game screen fix). Milestones 6 to 10 were written without a build
+Last updated after milestone 11 (play-obligation fix and mobile "Your turn" label). Milestones 6 to 11 were written without a build
 environment: nothing in them has been compiled or run by the author yet (see section 9 and section 10).
 
 **Goals:** unbloated, as smooth as possible, perfectly mobile compatible.
@@ -28,6 +28,7 @@ question in the original plan. It needs heavy bidding, bonus and partnership log
 | 6a | Hosting preparation | **Done (untested)**: relative base, GitHub Pages workflow, CI workflow, `docs/hosting.md`, Wake Lock, web manifest |
 | 6b | CI / deployment repair | **Done (not yet re-run)**: CORS origin and workspace config fixed (milestone 9) |
 | 6c | Online game screen fix | **Done (not yet re-run)**: `GameScreen` now renders the online game instead of a local one (milestone 10) |
+| 6d | Play-obligation fix and mobile polish | **Done (not yet re-run)**: tarock obligation applies in Farben too; "Your turn" label hidden on small screens (milestone 11) |
 | 7 | Automatic matchmaking and polish | Not started (matchmaking deliberately not wanted for now) |
 
 ---
@@ -265,13 +266,28 @@ milestone 5 API and parts at the milestone 8 API.
 `heuristic.test.ts`, and the relative-path regex in `tools/check-bundle.mjs`.
 **Housekeeping still to do by hand:** delete `tools/apply-changes.mjs` (obsolete, running it would duplicate locale keys) and any stale `plan.md` / `rules.md` in the repository root.
 
+### Milestone 11: play obligations in every contract, mobile "Your turn" label (done, not yet re-run)
+**Bug 1 (found while playing Farbendreier against three bots):** a player without the led suit could lay a plain card of another suit even while holding tarocks.
+**Cause:** `legalPlays` in `tricks.ts` waived the "must lay a tarock" step in Farben contracts (`if (!rules.farben) { ... } else { candidates = hand.slice() }`).
+The bots, the UI's playable set, the server and dummies all take their legal cards from `legalPlays` (via `legalActions` / `legalActionsFromView`), so one fix covers everyone.
+**Rule now (every contract, every player, dummies and bots included):** 1. follow the led suit if you can; 2. otherwise lay a tarock if you have one; 3. otherwise any card.
+Farben only changes who *wins* a trick (tarocks do not trump, no Pagat exception), so a tarock forced onto a plain-suit trick simply does not win it. Negative contracts still add the Pagat restriction and must-beat on top.
+- `packages/engine/src/tricks.ts`: tarock obligation applied unconditionally; comments on `PlayRules.farben` and `legalPlays` updated.
+- `packages/engine/test/tricks.test.ts`: the old "Farben: anything goes" test replaced by a Farben block checking tarock obligation, follow-suit, free play with neither, and tarock led.
+- `docs/rules.md`: sections 3.1, 5.4 (Farbendreier / Farbensolo) and 11 updated; this is also what the in-app rules screen shows.
+- No other code needed changes: `viewActions.ts`, `round.ts`, the heuristic bot (including its Farben play) and the UI all use `legalPlays`.
+- Effect on bots: in Farben a void-in-suit bot now has to spend a tarock, so Farben win rates may shift a little; re-run `pnpm forced -- --contract farbendreier --deals 3000 --filter bid` and re-tune `THRESHOLDS.farbenScore` values if needed.
+**Bug 2 (small screens):** the "Your turn" label in the action panel appeared and disappeared as the turn moved, which looked like a pop-up and shifted the layout.
+- `apps/web/src/app.css`: under 600 px width the label is hidden (`[data-testid='actions'] .status > strong`). The active seat highlight, the time clock and the grace clock remain. The label is unchanged on larger screens.
+- If the pop-up meant something else (for example the result dialog or the panel as a whole), tell me which and it can be adjusted.
+
 ---
 
 ## 10. Next expected step
 
 1. **Re-run CI.** Run `pnpm typecheck && pnpm i18n && pnpm test` locally first if possible, then push. The first run may still reveal errors that were hidden behind
    earlier failures (pnpm stops at the first failing package). Most likely spots: Svelte 5 typing in `online.svelte.ts` / `Room.svelte`, the `cloudflare:workers` types
-   in `apps/server`, and the wrangler version.
+   in `apps/server`, and the wrangler version. Note: `match.ts` imports `MatchConfig` twice (duplicate import); remove one if the typecheck complains.
 2. **Deploy and verify online play:** `pnpm server:deploy`, set the repository variable `VITE_SERVER_URL` (or paste the Workers URL under *Play online -> Server address*),
    enable Pages (Source: GitHub Actions). Create a room on one phone, join on another, press Start: both should see the same table (hands differ, scoreboard shared,
    the other human is not a bot). Check `https://<worker>.workers.dev/` shows `tarok server ok` and that creating a room does not return 403.
@@ -280,7 +296,7 @@ milestone 5 API and parts at the milestone 8 API.
 5. Online follow-ups: Playwright test with two browsers against `wrangler dev`, rate limiting, hibernating WebSockets, throttled persistence, optional chat,
    host kicking a player, sit-down for spectators when a seat frees up.
 6. Rules notebook per language and the PDF pipeline (step 5); Polish rules text.
-7. Ongoing bot work: tune other thresholds with forced benchmarks, defence in called-king games, optional ISMCTS.
+7. Ongoing bot work: tune other thresholds with forced benchmarks (Farben again after milestone 11), defence in called-king games, optional ISMCTS.
 8. Later (step 7): automatic matchmaking with a queue Durable Object, if wanted.
 
 ---

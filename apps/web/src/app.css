@@ -52,4 +52,9 @@ input:not([type='checkbox']), select {
 }
 input[type='checkbox'] { width: 1.4rem; height: 1.4rem; accent-color: var(--accent); }
 
+/* Small screens: no "Your turn" label in the action panel (the highlighted seat and the clock already show whose turn it is). */
+@media (max-width: 600px) {
+  [data-testid='actions'] .status > strong { display: none; }
+}
+
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; scroll-behavior: auto !important; } }

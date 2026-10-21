@@ -123,9 +123,9 @@ is decided.
 ### 3.1 A trick
 
 1. The leader (the declarer in trick 1, otherwise the previous trick's winner) lays any card.
-2. The others lay a card in clockwise order, where:
+2. The others lay a card in clockwise order, where (**in every contract, Farben included**):
    1. a player must **follow the suit** of the led card;
-   2. a player without that suit must lay a **tarock** (not in Farben contracts);
+   2. a player without that suit must lay a **tarock**;
    3. a player with neither lays any card.
 3. In **negative contracts** (and Trischaken) a player must also **beat the current winner if
    possible**, among the cards the rules above allow. Playing the highest card is often best but is not
@@ -133,7 +133,8 @@ is decided.
    this is applied first, then must-beat. Both rules apply to all players.
 4. There is **no obligation to beat** in positive contracts.
 5. The winner is the highest tarock, or (with no tarocks) the highest card of the led suit. In Farben
-   contracts tarocks are an ordinary suit: the winner is the highest card of the led suit.
+   contracts tarocks are an ordinary suit for deciding the winner: a tarock laid on a plain suit does not
+   trump it, and the winner is the highest card of the led suit (if a tarock is led, the highest tarock).
 6. The winner collects the trick into their pile and leads the next one.
 
 After 12 tricks, points and bonuses are counted and standings change (section 8).
@@ -233,9 +234,11 @@ applies (take 6 down to 1).
 
 #### Farbendreier (3) and Farbensolo (6)
 
-Like Dreier and Solodreier, but **tarocks are an ordinary suit** (they do not trump, there is no Pagat exception
-and no obligation to play a tarock when a suit cannot be followed). When discarding, the 1-point tarocks
-(2 to 20) must be put down first. The only available bonus is Valat.
+Like Dreier and Solodreier, but **tarocks are an ordinary suit when deciding who wins a trick** (they do not trump
+and there is no Pagat exception). The play obligations are unchanged: a player who cannot follow the led suit
+**must still lay a tarock** if they have one (it does not win the trick), and only a player with neither the suit nor
+a tarock may lay any card. When discarding, the 1-point tarocks (2 to 20) must be put down first. The only available
+bonus is Valat.
 
 #### Bettel (3), Piccolo (2), Zwiccolo (2), and the Ouvert forms (6 and 5)
 
@@ -449,6 +452,8 @@ Every human player has **one time reserve per round**, reset each round: **30 mi
 - The original says "farben" means no Talon; correct: "solo" means no Talon, "Farben" means tarocks do not trump.
 - Farbensolo is worth 6.
 - Negative contracts originally said "must lay the highest card"; the rule is now **must beat if possible**.
+- Farben contracts used to waive the "must lay a tarock when you cannot follow suit" obligation. That exception is gone: the
+  follow-suit, then tarock, then anything order applies to every contract. Farben only changes who wins the trick.
 
 ---
 

@@ -15,7 +15,10 @@ export interface Play {
 }
 
 export interface PlayRules {
-  /** Farben contracts: tarocks are an ordinary suit (no trumping, no Pagat exception). */
+  /**
+   * Farben contracts: tarocks are an ordinary suit when deciding who wins a trick (no trumping, no Pagat exception).
+   * This does NOT change which cards may be played: the follow-suit / must-tarock obligation is the same in every contract.
+   */
   farben: boolean;
   /** Negative contracts and Trischaken: must-beat and the Pagat restriction apply. */
   negative: boolean;
@@ -68,9 +71,10 @@ export function trickWinnerIndex(plays: readonly Play[], farben: boolean): numbe
 }
 
 /**
- * Cards the player may legally play.
- *
- * Follow suit; else a tarock (not in Farben); else anything.
+ * Cards the player may legally play. The first three steps apply to EVERY contract (Farben included):
+ *  1. a card of the led suit, if the player has one;
+ *  2. otherwise a tarock, if the player has one;
+ *  3. otherwise any card.
  * Negative contracts additionally apply, in this order:
  *  1. Pagat restriction: the Pagat may not be played unless it is the player's last tarock.
  *  2. Must-beat: if any remaining card beats the current winner, only those may be played.
@@ -88,12 +92,8 @@ export function legalPlays(
     const led = suitIndex(trick[0]!.card);
     candidates = hand.filter((c) => suitIndex(c) === led);
     if (candidates.length === 0) {
-      if (!rules.farben) {
-        const tarocks = hand.filter(isTarock);
-        candidates = tarocks.length > 0 ? tarocks : hand.slice();
-      } else {
-        candidates = hand.slice();
-      }
+      const tarocks = hand.filter(isTarock);
+      candidates = tarocks.length > 0 ? tarocks : hand.slice();
     }
   }
 
