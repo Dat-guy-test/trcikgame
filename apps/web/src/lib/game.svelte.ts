@@ -19,9 +19,12 @@ export function configFromSetup(s: GameSetup): MatchConfig {
     winCondition:
       s.winKind === 'rounds' ? { kind: 'rounds', rounds: s.winValue }
       : s.winKind === 'targetScore' ? { kind: 'targetScore', target: s.winValue }
+      : s.winKind === 'none' ? { kind: 'none' }
       : { kind: 'timeLimit', minutes: s.winValue },
     failSafeMinutes: s.failSafeMinutes,
     infiniteContra: s.infiniteContra,
+    slovenian: s.slovenian !== false,
+    bonuses: s.bonuses !== false,
     timers: s.timers ? DEFAULT_TIMERS : { bankSeconds: null },
   };
 }

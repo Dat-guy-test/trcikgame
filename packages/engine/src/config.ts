@@ -3,7 +3,9 @@
 export type WinCondition =
   | { kind: 'targetScore'; target: number }
   | { kind: 'rounds'; rounds: number }
-  | { kind: 'timeLimit'; minutes: number };
+  | { kind: 'timeLimit'; minutes: number }
+  /** No win condition: the match goes on until the players leave (or the optional fail-safe time limit ends it). */
+  | { kind: 'none' };
 
 export interface TimerConfig {
   /**
@@ -21,6 +23,10 @@ export interface MatchConfig {
   failSafeMinutes: number | null;
   /** Continue the contra chain past Mordkontra (x16). */
   infiniteContra: boolean;
+  /** Slovenian method (bidding with fewer Talon cards). Default (undefined) = enabled. */
+  slovenian?: boolean;
+  /** Bonuses (declaring and scoring, Valat included). Default (undefined) = enabled. */
+  bonuses?: boolean;
   timers: TimerConfig;
 }
 

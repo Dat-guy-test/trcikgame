@@ -4,16 +4,23 @@
  * A room has a lobby (seats: human / bot / open, owner starts the game) and then runs one engine `HostState`. The server is the
  * authority: it validates every intent, deals from a cryptographic shuffle, drives all clocks and bots, and sends each connection
  * only its own `hostView`. The Durable Object (room.ts) feeds it messages and one alarm.
+ *
+ * Leaving and rejoining: a player who is gone for TAKEOVER_MS is replaced by a bot. When the round ends and the next one starts, that
+ * bot becomes a dummy (as long as two regular players remain and there are at most 4 players). A player who comes back takes
+ * the bot's place at once; a dummy's place at once on the score screen or before the first licitation decision, otherwise at the end
+ * of the round (until then they watch).
+ *
+ * Option votes: on the score screen any human may propose one option change; all humans must approve within VOTE_MS.
  */
 import { heuristicBot } from '@tarok/ai';
 import {
-  IllegalAction, actorParticipant, createHost, createRng, hostAct, hostContinue, hostNextDeadlineMs, hostReady, hostRunBots,
-  hostSetController, hostTick, hostView, participantKindsFor,
-  type CardId, type Controller, type HostState, type MatchConfig, type Rng,
+  IllegalAction, actorParticipant, createHost, createRng, hostAct, hostContinue, hostMakeDummy, hostNextDeadlineMs, hostReady,
+  hostRunBots, hostSeatPlayer, hostSetController, hostSetOptions, hostTick, hostView, participantKindsFor,
+  type CardId, type Controller, type HostState, type MatchConfig, type OptionChange, type Rng,
 } from '@tarok/engine';
 import {
   MAX_NAME, PROTOCOL_VERSION, parseClientMessage,
-  type ClientMessage, type ErrorCode, type RoomSettings, type ServerMessage, type SlotInfo, type You,
+  type ClientMessage, type ErrorCode, type RoomSettings, type ServerMessage, type SlotInfo, type VoteResult, type You,
 } from '@tarok/protocol';
 
 export const BOT_DELAY_MS = 700;
@@ -24,6 +31,8 @@ export const AUTO_NEXT_MS = 2500;
 export const TAKEOVER_MS = 20_000;
 /** In the lobby an offline player's seat is released after this long. */
 export const LOBBY_RELEASE_MS = 60_000;
+/** An option vote ends after this long (and fails unless everybody approved). */
+export const VOTE_MS = 60_000;
 
 export interface Slot {
   kind: 'open' | 'human' | 'bot' | 'dummy';
@@ -31,6 +40,15 @@ export interface Slot {
   token: string | null;
   name: string;
   offlineSince: number | null;
+}
+
+export interface VoteState {
+  proposer: number;
+  change: OptionChange;
+  /** Absolute time (ms) when the vote ends. */
+  deadline: number;
+  /** Participant -> answer. */
+  votes: Record<number, boolean>;
 }
 
 /** Everything that is persisted (plain JSON). Contains secrets and all hands: never send it to a client. */
@@ -44,6 +62,9 @@ export interface RoomData {
   /** Null while the room is still a lobby. */
   host: HostState | null;
   nextVotes: number[];
+  /** The running option vote (missing in rooms saved by older versions). */
+  vote?: VoteState | null;
+  voteResult?: VoteResult | null;
   touched: number;
 }
 
@@ -67,9 +88,12 @@ export function matchConfigFor(s: RoomSettings): MatchConfig {
     winCondition:
       s.winKind === 'rounds' ? { kind: 'rounds', rounds: s.winValue }
       : s.winKind === 'targetScore' ? { kind: 'targetScore', target: s.winValue }
+      : s.winKind === 'none' ? { kind: 'none' }
       : { kind: 'timeLimit', minutes: s.winValue },
     failSafeMinutes: s.failSafeMinutes,
     infiniteContra: s.infiniteContra,
+    slovenian: s.slovenian !== false,
+    bonuses: s.bonuses !== false,
     timers: { bankSeconds: s.timers ? 'auto' : null },
   };
 }
@@ -79,8 +103,26 @@ export function newRoomData(code: string, settings: RoomSettings, ownerToken: st
   return {
     v: 1, code, settings, ownerToken,
     slots: kinds.map((k) => ({ kind: k === 'dummy' ? 'dummy' : 'open', token: null, name: '', offlineSince: null }) as Slot),
-    host: null, nextVotes: [], touched: now,
+    host: null, nextVotes: [], vote: null, voteResult: null, touched: now,
   };
+}
+
+function settingsWith(s: RoomSettings, c: OptionChange): RoomSettings {
+  switch (c.key) {
+    case 'slovenian': return { ...s, slovenian: c.value };
+    case 'bonuses': return { ...s, bonuses: c.value };
+    case 'infiniteContra': return { ...s, infiniteContra: c.value };
+    case 'win': return { ...s, winKind: c.kind, winValue: c.value };
+  }
+}
+
+function differs(s: RoomSettings, c: OptionChange): boolean {
+  switch (c.key) {
+    case 'slovenian': return (s.slovenian !== false) !== c.value;
+    case 'bonuses': return (s.bonuses !== false) !== c.value;
+    case 'infiniteContra': return s.infiniteContra !== c.value;
+    case 'win': return c.kind === 'none' ? s.winKind !== 'none' : s.winKind !== c.kind || s.winValue !== c.value;
+  }
 }
 
 interface Conn {
@@ -135,6 +177,7 @@ export class RoomCore {
     const conn = this.conns.get(id);
     if (!conn) return;
     this.advance();
+    this.afterHostChange();
     const msg = parseClientMessage(raw);
     if (!msg) return this.error(id, 'bad_message', 'Invalid message');
     if (msg.t === 'ping') return this.io.send(id, { t: 'pong' });
@@ -145,6 +188,8 @@ export class RoomCore {
         case 'act': return this.act(id, conn, msg.action);
         case 'ready': return this.ready(id, conn);
         case 'next': return this.next(id, conn);
+        case 'propose': return this.propose(id, conn, msg.change);
+        case 'vote': return this.castVote(id, conn, msg.approve);
         case 'slot': return this.setSlot(id, conn, msg.index, msg.kind);
         case 'start': return this.start(id, conn);
       }
@@ -188,11 +233,36 @@ export class RoomCore {
     conn.participant = idx >= 0 ? idx : null;
     if (idx >= 0) {
       d.slots[idx]!.offlineSince = null;
-      if (d.host && d.host.controllers[idx] !== 'human') d.host = hostSetController(d.host, idx, 'human');
+      this.reseat(idx);
     }
     const secret = idx >= 0 ? d.slots[idx]!.token! : isOwner ? d.ownerToken : this.env.randomToken();
     this.io.send(id, { t: 'welcome', v: PROTOCOL_VERSION, code: d.code, token: secret, you: this.youOf(conn) });
     this.changed();
+  }
+
+  /**
+   * A player is back. A bot that replaced them hands the seat back at once. A dummy is replaced at once on the score screen or
+   * before the first licitation decision; otherwise the player watches until the round ends (see `promoteWaiting`).
+   */
+  private reseat(p: number): void {
+    const h = this.data.host;
+    if (!h) return;
+    if (h.match.participantKinds[p] === 'dummy') {
+      try {
+        this.data.host = hostSeatPlayer(h, p);
+      } catch (e) {
+        if (!(e instanceof IllegalAction)) throw e;
+      }
+    } else if (h.controllers[p] !== 'human') {
+      this.data.host = hostSetController(h, p, 'human');
+    }
+  }
+
+  /** Players who came back while their seat was a dummy sit down when the round has ended. */
+  private promoteWaiting(): void {
+    this.data.slots.forEach((s, p) => {
+      if (s.kind === 'human' && this.isConnected(p)) this.reseat(p);
+    });
   }
 
   private uniqueName(name: string, exceptIdx: number): string {
@@ -258,7 +328,7 @@ export class RoomCore {
     this.changed();
   }
 
-  /** "Next round": starts when every human has pressed it. */
+  /** "Next round": starts when every human has pressed it (and no option vote is running). */
   private next(id: string, conn: Conn): void {
     const h = this.requireGame(id, conn);
     if (!h) return;
@@ -272,19 +342,96 @@ export class RoomCore {
     return h.controllers.map((_, p) => p).filter((p) => h.controllers[p] === 'human' && h.match.participantKinds[p] === 'player');
   }
 
-  /** Clears stale votes and starts the next round once every human voted. */
+  /**
+   * Starts the next round. First, bots that replaced players who are still away become dummies (when at least two regular players
+   * remain and the match has at most 4 players).
+   */
+  private startNextRound(h: HostState): HostState {
+    let cur = h;
+    this.data.slots.forEach((s, p) => {
+      if (s.kind !== 'human' || this.isConnected(p)) return;
+      if (cur.controllers[p] !== 'bot' || cur.match.participantKinds[p] !== 'player') return;
+      try {
+        cur = hostMakeDummy(cur, p);
+      } catch (e) {
+        if (!(e instanceof IllegalAction)) throw e;
+      }
+    });
+    return hostContinue(cur, this.env.deck());
+  }
+
+  /** Clears stale votes, seats returning players and starts the next round once every human voted. */
   private afterHostChange(): void {
-    const h = this.data.host;
-    if (!h) return;
-    if (h.stage !== 'betweenRounds') {
-      this.data.nextVotes = [];
+    const d = this.data;
+    if (!d.host) return;
+    if (d.host.stage !== 'betweenRounds') {
+      d.nextVotes = [];
+      d.vote = null;
+      d.voteResult = null;
       return;
     }
+    this.promoteWaiting();
+    const h = d.host;
+    if (d.vote) return; // an option vote is running: the next round waits for it
     const humans = this.humansOf(h);
-    if (humans.length > 0 && humans.every((p) => this.data.nextVotes.includes(p))) {
-      this.data.host = hostContinue(h, this.env.deck());
-      this.data.nextVotes = [];
+    if (humans.length > 0 && humans.every((p) => d.nextVotes.includes(p))) {
+      d.host = this.startNextRound(h);
+      d.nextVotes = [];
     }
+  }
+
+  // ----- option votes -----
+
+  private propose(id: string, conn: Conn, change: OptionChange): void {
+    const h = this.requireGame(id, conn);
+    if (!h) return;
+    const d = this.data;
+    if (h.stage !== 'betweenRounds') return this.error(id, 'illegal', 'Options can only be changed between rounds');
+    if (!this.humansOf(h).includes(conn.participant!)) return this.error(id, 'illegal', 'Only players can propose changes');
+    if (d.vote) return this.error(id, 'illegal', 'A vote is already running');
+    if (!differs(d.settings, change)) return this.error(id, 'illegal', 'The option already has that value');
+    d.vote = { proposer: conn.participant!, change, deadline: this.env.now() + VOTE_MS, votes: { [conn.participant!]: true } };
+    d.voteResult = null;
+    this.resolveVote();
+    this.afterHostChange();
+    this.changed();
+  }
+
+  private castVote(id: string, conn: Conn, approve: boolean): void {
+    const h = this.requireGame(id, conn);
+    if (!h) return;
+    const d = this.data;
+    if (!d.vote) return this.error(id, 'illegal', 'No vote is running');
+    if (!this.humansOf(h).includes(conn.participant!)) return this.error(id, 'illegal', 'Only players can vote');
+    d.vote.votes[conn.participant!] = approve;
+    this.resolveVote();
+    this.afterHostChange();
+    this.changed();
+  }
+
+  /** Ends the vote when everybody approved (change applied), somebody rejected, or the time is up. */
+  private resolveVote(): void {
+    const d = this.data;
+    const v = d.vote;
+    const h = d.host;
+    if (!v || !h) return;
+    const humans = this.humansOf(h);
+    const allYes = humans.length > 0 && humans.every((p) => v.votes[p] === true);
+    const rejected = humans.some((p) => v.votes[p] === false);
+    const expired = this.env.now() >= v.deadline;
+    if (!allYes && !rejected && !expired) return;
+    let passed = allYes && !rejected;
+    if (passed) {
+      try {
+        d.host = hostSetOptions(h, v.change);
+        d.settings = settingsWith(d.settings, v.change);
+      } catch (e) {
+        if (!(e instanceof IllegalAction)) throw e;
+        passed = false;
+      }
+    }
+    d.vote = null;
+    d.voteResult = { change: v.change, passed };
   }
 
   // ----- time -----
@@ -307,6 +454,7 @@ export class RoomCore {
         d.host = hostSetController(d.host, p, 'bot');
       }
     });
+    this.resolveVote();
     this.afterHostChange();
   }
 
@@ -323,7 +471,7 @@ export class RoomCore {
       }
     }
     if (h.stage === 'betweenRounds' && this.humansOf(h).length === 0) {
-      return { delay: AUTO_NEXT_MS, run: () => { this.data.host = hostContinue(h, this.env.deck()); this.data.nextVotes = []; } };
+      return { delay: AUTO_NEXT_MS, run: () => { this.data.host = this.startNextRound(h); this.data.nextVotes = []; } };
     }
     return null;
   }
@@ -343,6 +491,7 @@ export class RoomCore {
         t = Math.min(t, this.botReadyAt);
       } else this.botReadyAt = null;
     }
+    if (this.data.vote) t = Math.min(t, this.data.vote.deadline);
     this.data.slots.forEach((s, p) => {
       if (s.kind !== 'human' || s.offlineSince === null) return;
       if (h && h.controllers[p] !== 'human') return;
@@ -351,7 +500,7 @@ export class RoomCore {
     return t === Number.POSITIVE_INFINITY ? null : Math.max(t, now + 25);
   }
 
-  /** Runs due work (clocks, takeovers, one bot move) and returns the next alarm time. */
+  /** Runs due work (clocks, takeovers, votes, one bot move) and returns the next alarm time. */
   alarm(): number | null {
     if (this.conns.size === 0) return null;
     const now = this.env.now();
@@ -391,12 +540,18 @@ export class RoomCore {
     const d = this.data;
     const you = this.youOf(c);
     if (!d.host) return { t: 'lobby', code: d.code, you, settings: d.settings, slots: d.slots.map((s, p) => this.slotInfo(s, p)) };
+    // A returning player whose seat is still a dummy watches (public view) until they sit down.
+    const sits = c.participant !== null && d.host.match.participantKinds[c.participant] !== 'dummy';
     return {
       t: 'state', you, settings: d.settings,
-      view: hostView(d.host, c.participant ?? -1),
+      view: hostView(d.host, sits ? c.participant! : -1),
       names: d.slots.map((s) => (s.kind === 'human' ? s.name : null)),
       connected: d.slots.map((s, p) => (s.kind === 'human' ? this.isConnected(p) : s.kind !== 'open')),
       nextVotes: d.nextVotes,
+      vote: d.vote
+        ? { proposer: d.vote.proposer, change: d.vote.change, msLeft: Math.max(0, d.vote.deadline - this.env.now()), votes: d.vote.votes }
+        : null,
+      voteResult: d.voteResult ?? null,
     };
   }
 

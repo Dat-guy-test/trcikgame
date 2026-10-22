@@ -16,3 +16,4 @@ export * from './bot';
 export * from './sim';
 export * from './match';
 export * from './host';
+export * from './options';

@@ -1,7 +1,7 @@
 # Tarok website: Plan and progress
 
 Merges the original `Plan.txt` with the progress made so far. Rules live in `rules.md`.
-Last updated after milestone 13 (CI typecheck fix: `override` modifiers in `apps/server/src/room.ts`). Milestones 6 to 13 were written without a build
+Last updated after milestone 14 (match options, option votes, leave/rejoin with dummies). Milestones 6 to 14 were written without a build
 environment: nothing in them has been compiled or run by the author yet (see section 9 and section 10).
 
 **Goals:** unbloated, as smooth as possible, perfectly mobile compatible.
@@ -31,6 +31,7 @@ question in the original plan. It needs heavy bidding, bonus and partnership log
 | 6d | Play-obligation fix and mobile polish | **Done** (milestone 11) |
 | 6e | CI typecheck repair | **Done, not yet re-run** (milestone 12): duplicate `MatchConfig` import in `match.ts` |
 | 6f | CI typecheck repair, part 2 | **Done, not yet re-run** (milestone 13): missing `override` modifiers in `room.ts` |
+| 6g | Match options, option votes, leave/rejoin | **Written, not compiled or run** (milestone 14) |
 | 7 | Automatic matchmaking and polish | Not started (matchmaking deliberately not wanted for now) |
 
 ---
@@ -57,12 +58,14 @@ seeded PRNG. It knows nothing about the DOM or the network.
 - **Online play:** the identical engine runs in the room's Durable Object, which is the authority. Clients send
   intents; the server validates and broadcasts a **per-player view**, so hidden hands never cross the wire.
 - **One game screen, two game sources:** `GameScreen` takes an optional `game: GameLike` prop. The local `Game` and the
-  WebSocket `OnlineGame` both implement `GameLike` (`view`, `names`, `hold`, `roundsTotal`, `act`, `ready`, `next`, ...).
-  The online `Room` screen passes its `OnlineGame` in; with no prop the screen creates a local game against bots.
+  WebSocket `OnlineGame` both implement `GameLike` (`view`, `names`, `hold`, `roundsTotal`, `act`, `ready`, `next`, ...; online
+  also `roomSettings`, `vote`, `propose`, `castVote`). The online `Room` screen passes its `OnlineGame` in; with no prop the screen creates a local game against bots.
 - **Bots:** functions `(playerView) -> action`, running in both places; the server uses them to fill empty seats and for the
   "random move after the grace period" rule. Heuristic bot first; ISMCTS in a Web Worker later.
 - **Dummy players** are a rules-config variant of the engine (a seat with a controller), not a UI hack, and are a different
-  concept from bots.
+  concept from bots. Since milestone 14 a seat can also change between player and dummy between rounds (a departed online player).
+- **Match options** (`slovenian`, `bonuses`, `infiniteContra`, win condition) live in `MatchConfig`, are copied into each `RoundConfig`
+  and can be changed between rounds (`matchSetOptions`, `hostSetOptions`).
 - **Match structure:** Match -> Round -> Trick. Win condition and scoreboard are pluggable at the Match layer.
 - **Event log:** append-only action log (undo in local play, replays, reconnection, debugging).
 - **Time:** the engine stays free of real time. The host (browser or Durable Object) drives the clocks using the pure helpers
@@ -75,10 +78,10 @@ seeded PRNG. It knows nothing about the DOM or the network.
     packages/
       engine/    pure rules, state machine, scoring, variants (shared)       <- real work so far
       ai/        bot strategies + tournament harness (shared)                <- first version
-      protocol/  message types + validation (shared client/server)           <- written (milestone 8)
+      protocol/  message types + validation (shared client/server)           <- written (milestone 8, extended in 14)
     apps/
       web/       Svelte SPA: menu, settings, local and online UIs            <- placeholder
-      server/    Cloudflare Worker + Durable Object "Room"                   <- written (milestone 8)
+      server/    Cloudflare Worker + Durable Object "Room"                   <- written (milestone 8, extended in 14)
     content/
       rules/<lang>/*.md     rules notebook source (single source of truth)
       i18n/<lang>.json      UI strings
@@ -87,7 +90,8 @@ seeded PRNG. It knows nothing about the DOM or the network.
 
 Engine modules (`packages/engine/src`): `cards`, `rng`, `deal`, `tricks`, `contracts` (contract table as data), `bidding`,
 `scoring`, `config`, `state`, `evaluate`, `round` (state machine), `view`, `viewActions` (legal actions from a view),
-`match` (rounds, standings, win conditions, 2 to any number of players), `clock`, `bot` (random bot), `sim`, `host` (host runner: stages, clocks, bots, per-participant view).
+`match` (rounds, standings, win conditions, 2 to any number of players), `clock`, `bot` (random bot), `sim`, `host` (host runner: stages, clocks, bots, per-participant view),
+`options` (option changes and seat changes between rounds).
 AI modules (`packages/ai/src`): `strategy`, `random`, `hand`, `heuristic`, `tournament`, `forced`.
 
 ---
@@ -298,22 +302,53 @@ the "Regular players ranked by score" comment sat above `playedRounds` instead o
 **Fix:** `override async fetch(...)` and `override async alarm()` in `apps/server/src/room.ts`. No behaviour change.
 **Caveat:** `apps/web` (`svelte-check`) was started in the same CI run but was cut off by the server failure, so its result is still unknown. If it reports errors, they are the next thing to fix (section 10, step 1).
 
+### Milestone 14: match options, option votes, leave and rejoin (written, not compiled or run)
+**1. Slovenian method can be switched off** (`MatchConfig.slovenian`, default on). `validateBid`, `outbids` and `outbidsOwnBid` take a `BidOptions` argument
+(`bidOptionsOf(config)`); with the method off only the contract's full `take` is a valid bid. The option travels `MatchConfig` -> `RoundConfig` -> `RoundView.slovenian`,
+so `legalActions` and `legalActionsFromView` stay equal (the property test still holds). Bots need no change: they only choose from the legal actions.
+**2. No win condition** (`WinCondition` has a new `{ kind: 'none' }`): the match only ends when the players leave (or the optional fail-safe time limit ends it).
+Setup, online room creation, `matchConfigFor` and the protocol accept `winKind: 'none'`.
+**3. Bonuses can be switched off** (`MatchConfig.bonuses`, default on). No declare phase, no declared Valat, nothing scored (silent bonuses and Valat included: `finishPlayed`
+returns no bonuses and no Valat), and Besser Rufer (which needs a declared bonus) cannot be bid.
+**4. Option votes in online matches.** On the score screen any human player can propose one change (Slovenian method, bonuses, contra chain limit, win condition).
+`propose` / `vote` messages; the server keeps a `VoteState` (60 s). It passes only when **every human** approved (the proposer counts as yes); one rejection or the
+end of the time fails it (non-voters count as no). While a vote runs the next round does not start. A passed change is applied with `hostSetOptions` (from the next round on),
+the room settings are updated, and `StateMessage.vote` / `voteResult` drive the new `OptionVote.svelte` card inside the result dialog. Bots and dummies do not vote.
+**5. Leaving and rejoining.** After 20 s offline a bot plays for the player (unchanged). New:
+- (a) When the next round starts, bots that replaced players who are still away become dummies (`hostMakeDummy`), as long as at least two regular players remain and the match has at most 4 players (no dummies exist with 5 or more; there the bot stays).
+- (b) A player who returns while a bot still plays for them takes the seat back at once.
+- (c) A player who returns while their seat is a dummy watches (public view, "you are spectating") and sits down when the round ends.
+- (d) If the score screen is shown, or nobody has made a decision in the licitation yet (card viewing included), they sit down at once (`hostSeatPlayer`, which also fixes the current round's `toAct`).
+The returning player keeps their standings entry (a dummy keeps scoring while the player is away, as dummies always do). New engine pieces: `matchSetOptions`,
+`matchSetParticipantKind`, `roundHasNoDecision`, `optionsChanged` / `seatKind` log events (replay handles them), `options.ts`.
+**Tests added:** `packages/engine/test/options.test.ts`, `apps/server/test/vote.test.ts`, protocol tests for proposals and settings.
+**Changed files:** engine (`config`, `bidding`, `state`, `match`, `round`, `view`, `viewActions`, `evaluate`, `options` new, `index`), protocol (`index`, test),
+server (`roomCore`, new vote test), web (`setup.svelte.ts`, `Setup`, `Online`, `game.svelte.ts`, `online.svelte.ts`, `gamelike.ts`, `ResultDialog`, `OptionVote` new, both locales).
+**Known limits / decisions to confirm:**
+- `docs/rules.md` is **not** updated yet: it still describes the Slovenian method, bonuses and the win conditions as always on. It needs a short section on the options, the votes and the leave/rejoin rules (and then shows in the in-app rules screen).
+- Dummy seat positions: when 2 players are left out of 4 the dummies can be adjacent (for example seats 2 and 3), not alternating as in the original 2-player variant. The engine handles it, but the 2-player rules text assumes alternation.
+- Not offered as votable options: time limits (the clock setup is per round) and player count.
+- Changing the win condition by vote is checked after the next round is settled, not retroactively.
+- With 5 to 8 players nobody becomes a dummy: a departed player's bot stays until they return.
+- Votes are not logged in the match log (the room settings carry the result), and online `replayMatch` still cannot reproduce rooms.
+
 ---
 
 ## 10. Next expected step
 
-1. **Re-run CI.** Run `pnpm typecheck && pnpm i18n && pnpm test` locally first if possible, then push. Engine, ai and protocol pass; the `override` errors in `apps/server` are fixed,
+1. **Re-run CI.** Run `pnpm typecheck && pnpm i18n && pnpm test` locally first if possible, then push. Engine, ai and protocol passed typecheck before milestone 14; the `override` errors in `apps/server` are fixed,
    but `apps/web` (`svelte-check`) has not finished in CI yet, and `pnpm i18n` and `pnpm test` have not run in CI at all. To see all typecheck errors at once use `pnpm -r --no-bail typecheck`.
-   Most likely spots: Svelte 5 typing in `online.svelte.ts` / `Room.svelte`, then failing tests.
-2. **Online play is deployed and working.** Remaining checks: a second device joining the same room, reconnect after closing a tab, spectator view.
-3. **Add the missing UI test:** a jsdom test for `Room.svelte` / `GameScreen` with a fake `GameLike` (and a fake WebSocket) so the milestone 10 regression cannot return.
-4. **Look at it on a real phone and fix the layout**, then replace `Card.svelte` and the colours with the real art; PWA service worker, Playwright screenshots in CI.
-5. Online follow-ups: Playwright test with two browsers against `wrangler dev`, rate limiting, hibernating WebSockets, throttled persistence, optional chat,
+   Most likely spots: Svelte 5 typing in `online.svelte.ts` / `Room.svelte` / `OptionVote.svelte`, then failing tests (the new `vote.test.ts` drives whole rounds and is the likeliest to need adjustment).
+2. **Online play is deployed and working.** Remaining checks: a second device joining the same room, reconnect after closing a tab, spectator view, and the new option vote and rejoin flows (two browsers).
+3. **Update `docs/rules.md`** for the new options, votes and leave/rejoin behaviour (see milestone 14).
+4. **Add the missing UI test:** a jsdom test for `Room.svelte` / `GameScreen` with a fake `GameLike` (and a fake WebSocket) so the milestone 10 regression cannot return; extend it to `OptionVote`.
+5. **Look at it on a real phone and fix the layout**, then replace `Card.svelte` and the colours with the real art; PWA service worker, Playwright screenshots in CI.
+6. Online follow-ups: Playwright test with two browsers against `wrangler dev`, rate limiting, hibernating WebSockets, throttled persistence, optional chat,
    host kicking a player, sit-down for spectators when a seat frees up.
-6. Rules notebook per language and the PDF pipeline (step 5); Polish rules text.
-7. Ongoing bot work: tune other thresholds with forced benchmarks (Farben again after milestone 11), defence in called-king games, optional ISMCTS.
-8. Later (step 7): automatic matchmaking with a queue Durable Object, if wanted.
-9. Housekeeping: delete `tools/apply-changes.mjs`.
+7. Rules notebook per language and the PDF pipeline (step 5); Polish rules text.
+8. Ongoing bot work: tune other thresholds with forced benchmarks (Farben again after milestone 11), defence in called-king games, optional ISMCTS.
+9. Later (step 7): automatic matchmaking with a queue Durable Object, if wanted.
+10. Housekeeping: delete `tools/apply-changes.mjs`.
 
 ---
 
@@ -322,11 +357,12 @@ the "Regular players ranked by score" comment sat above `playedRounds` instead o
 All decisions the owner has made are folded into `rules.md`. Remaining assumptions are listed in `rules.md` section 12; none block the next step.
 
 - Target-score matches continue while the top score is tied; first place is only decided by a unique leader at or above the target.
-- With more than 4 players the player in seat `round % 4` is swapped out each round; dummies are only used with 3 players.
+- With more than 4 players the player in seat `round % 4` is swapped out each round; dummies are only used with 3 players (and, since milestone 14, for departed players in matches of up to 4).
 - `replayMatch` does not restore elapsed time (the `timeExpired` event restores its effect).
 - Card viewing is paid from the time reserve per player (not a shared clock); with clocks off there is no viewing stage.
 - A declarer who enters play with an empty reserve gets the 10 s grace before forfeiting; running out during play forfeits at once.
-- Online: a disconnected human is replaced by a bot after 20 s; "next round" needs every human; a room frozen while empty does not charge time; the creator
+- Online: a disconnected human is replaced by a bot after 20 s; "next round" needs every human (and waits for a running option vote); a room frozen while empty does not charge time; the creator
   of a room is its host for life.
+- Option votes: all humans must approve within 60 s; silence counts as no. Should an offline human (before the 20 s takeover) block a vote? Currently yes until the bot takes over.
 
 The 2-player variant is implemented; its assumptions are in `rules.md` section 12 (items 9 to 11).

@@ -32,12 +32,15 @@
       <option value="rounds">{t('setup.win.rounds')}</option>
       <option value="targetScore">{t('setup.win.target')}</option>
       <option value="timeLimit">{t('setup.win.time')}</option>
+      <option value="none">{t('setup.win.none')}</option>
     </select>
   </label>
-  <label class="field">
-    <span>{unit}</span>
-    <input type="number" inputmode="numeric" min="1" data-testid="win-value" bind:value={setup.winValue} onchange={clampValue} />
-  </label>
+  {#if setup.winKind !== 'none'}
+    <label class="field">
+      <span>{unit}</span>
+      <input type="number" inputmode="numeric" min="1" data-testid="win-value" bind:value={setup.winValue} onchange={clampValue} />
+    </label>
+  {/if}
 
   <label class="check"><input type="checkbox" bind:checked={failSafe} /> {t('setup.failSafe')}</label>
   {#if failSafe}
@@ -48,6 +51,8 @@
   {/if}
   <label class="check"><input type="checkbox" bind:checked={setup.timers} /> {t('setup.timers')}</label>
   <label class="check"><input type="checkbox" bind:checked={setup.infiniteContra} /> {t('setup.infiniteContra')}</label>
+  <label class="check"><input type="checkbox" data-testid="slovenian" bind:checked={setup.slovenian} /> {t('setup.slovenian')}</label>
+  <label class="check"><input type="checkbox" data-testid="bonuses" bind:checked={setup.bonuses} /> {t('setup.bonuses')}</label>
 
   <div class="row">
     <button class="btn" onclick={() => go('menu')}>{t('action.back')}</button>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generateRoomCode, isRoomCode, parseAction, parseClientMessage, validateSettings } from '../src';
+import { generateRoomCode, isRoomCode, parseAction, parseClientMessage, parseOptionChange, validateSettings } from '../src';
 
 const msg = (x: unknown) => parseClientMessage(JSON.stringify(x));
 
@@ -31,15 +31,33 @@ describe('client messages', () => {
   });
 });
 
+describe('option votes', () => {
+  it('parses proposals and votes and drops unknown fields', () => {
+    expect(msg({ t: 'propose', change: { key: 'slovenian', value: false, evil: 1 } })).toEqual({ t: 'propose', change: { key: 'slovenian', value: false } });
+    expect(msg({ t: 'propose', change: { key: 'win', kind: 'none', value: 1 } })).toEqual({ t: 'propose', change: { key: 'win', kind: 'none', value: 1 } });
+    expect(msg({ t: 'vote', approve: true })).toEqual({ t: 'vote', approve: true });
+  });
+
+  it('rejects malformed proposals', () => {
+    expect(parseOptionChange({ key: 'bonuses', value: 'no' })).toBeNull();
+    expect(parseOptionChange({ key: 'timers', value: true })).toBeNull();
+    expect(parseOptionChange({ key: 'win', kind: 'rounds', value: 0 })).toBeNull();
+    expect(parseOptionChange({ key: 'win', kind: 'forever', value: 3 })).toBeNull();
+    expect(msg({ t: 'vote', approve: 'yes' })).toBeNull();
+  });
+});
+
 describe('settings and codes', () => {
   const ok = { players: 4, winKind: 'rounds', winValue: 8, failSafeMinutes: null, infiniteContra: false, timers: true };
 
   it('validates room settings', () => {
     expect(validateSettings(ok)).toEqual(ok);
+    expect(validateSettings({ ...ok, slovenian: false, bonuses: false, winKind: 'none' })).toEqual({ ...ok, slovenian: false, bonuses: false, winKind: 'none' });
     expect(validateSettings({ ...ok, players: 9 })).toBeNull();
     expect(validateSettings({ ...ok, winKind: 'x' })).toBeNull();
     expect(validateSettings({ ...ok, winValue: 0 })).toBeNull();
     expect(validateSettings({ ...ok, timers: 'yes' })).toBeNull();
+    expect(validateSettings({ ...ok, slovenian: 'no' })).toBeNull();
     expect(validateSettings(null)).toBeNull();
   });
 

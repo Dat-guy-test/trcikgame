@@ -119,11 +119,13 @@ export function finishPlayed(s: RoundState): RoundResult {
   const counted = { declarer: pileCount(piles.declarer), defender: pileCount(piles.defender) };
   const contractWon = counted.declarer >= WIN_THRESHOLD;
 
-  const bonuses = bonusOutcomes(s, bonusEvents(s, declarerSide, piles));
+  // With bonuses switched off (match option) nothing is scored: no bonuses, no Valat.
+  const bonusesOn = s.config.bonuses !== false;
+  const bonuses = bonusesOn ? bonusOutcomes(s, bonusEvents(s, declarerSide, piles)) : [];
 
   const winners = s.tricks.map((t) => t.winner);
   let achievedBy: Side | null = null;
-  if (valatAllowed(def) && winners.length === 12) {
+  if (bonusesOn && valatAllowed(def) && winners.length === 12) {
     if (winners.every((w) => declarerSide.includes(w))) achievedBy = 'declarer';
     else if (winners.every((w) => defenderSide.includes(w))) achievedBy = 'defender';
   }

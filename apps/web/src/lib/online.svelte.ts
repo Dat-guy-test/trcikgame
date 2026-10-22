@@ -3,8 +3,10 @@
  * works unchanged. The server owns the game; this class only sends intents and renders the `HostView` it is given.
  * Between messages it counts the running clocks down locally so they look smooth.
  */
-import type { Action, CompletedTrick, HostView } from '@tarok/engine';
-import { PROTOCOL_VERSION, parseServerMessage, type ClientMessage, type LobbyMessage, type StateMessage } from '@tarok/protocol';
+import type { Action, CompletedTrick, HostView, OptionChange } from '@tarok/engine';
+import {
+  PROTOCOL_VERSION, parseServerMessage, type ClientMessage, type LobbyMessage, type RoomSettings, type StateMessage, type VoteInfo, type VoteResult,
+} from '@tarok/protocol';
 import type { GameLike } from './gamelike';
 import { t } from './i18n.svelte';
 import { loadToken, saveToken, wsUrl } from './server';
@@ -79,6 +81,24 @@ export class OnlineGame implements GameLike {
     return !!s && s.you.participant !== null && s.view.stage === 'betweenRounds' && s.nextVotes.includes(s.you.participant);
   }
 
+  get roomSettings(): RoomSettings | null {
+    return this.server?.settings ?? null;
+  }
+
+  get vote(): VoteInfo | null {
+    return this.server?.vote ?? null;
+  }
+
+  /** Time left on the running vote, counted down locally between messages. */
+  get voteMsLeft(): number | null {
+    const v = this.server?.vote;
+    return v ? Math.max(0, v.msLeft - Math.max(0, this.clockMs - this.baseAt)) : null;
+  }
+
+  get voteResult(): VoteResult | null {
+    return this.server?.voteResult ?? null;
+  }
+
   nameOf(participant: number | null | undefined): string {
     return participant === null || participant === undefined ? '' : (this.names[participant] ?? '');
   }
@@ -118,6 +138,8 @@ export class OnlineGame implements GameLike {
   };
   ready = (): void => this.send({ t: 'ready' });
   next = (): void => this.send({ t: 'next' });
+  propose = (change: OptionChange): void => this.send({ t: 'propose', change });
+  castVote = (approve: boolean): void => this.send({ t: 'vote', approve });
   setSlot(index: number, kind: 'open' | 'bot'): void {
     this.send({ t: 'slot', index, kind });
   }

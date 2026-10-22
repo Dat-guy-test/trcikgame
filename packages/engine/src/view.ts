@@ -17,6 +17,10 @@ export interface RoundView {
   startingPlayer: number;
   /** The contra chain continues past Mordkontra (x16). */
   infiniteContra: boolean;
+  /** The Slovenian method (bidding with fewer Talon cards) is allowed. */
+  slovenian: boolean;
+  /** Bonuses (declaring and scoring) are enabled in this round. */
+  bonuses: boolean;
   /** `null` = hidden hand. Own hand, dummy hands (after bidding) and all hands in Ouvert (after trick 1) are visible. */
   hands: (CardId[] | null)[];
   handSizes: number[];
@@ -67,6 +71,8 @@ export function viewFor(s: RoundState, seat: number): RoundView {
     seatKinds: [...s.config.seatKinds],
     startingPlayer: s.config.startingPlayer,
     infiniteContra: s.config.infiniteContra,
+    slovenian: s.config.slovenian !== false,
+    bonuses: s.config.bonuses !== false,
     hands: s.hands.map((h, i) => (visible(i) ? [...h] : null)),
     handSizes: s.hands.map((h) => h.length),
     talon: { revealed: s.talonRevealed, piles: s.talonSeen ? s.talonSeen.map((p) => [...p]) : null },

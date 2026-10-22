@@ -2,6 +2,7 @@
   import type { GameLike } from '../lib/gamelike';
   import { t, type Key } from '../lib/i18n.svelte';
   import { go } from '../lib/router.svelte';
+  import OptionVote from './OptionVote.svelte';
   import Scoreboard from './Scoreboard.svelte';
 
   let { game }: { game: GameLike } = $props();
@@ -55,6 +56,10 @@
 
     {#if v.winners.length > 0}
       <p class="winner">{t('result.winners', { names: v.winners.map((p) => game.nameOf(p)).join(', ') })}</p>
+    {/if}
+
+    {#if game.online && !v.finished}
+      <OptionVote {game} />
     {/if}
 
     <div class="row">

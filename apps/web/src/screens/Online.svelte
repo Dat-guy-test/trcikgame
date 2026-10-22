@@ -11,6 +11,8 @@
   let winValue = $state(setup.winValue);
   let timers = $state(setup.timers);
   let infiniteContra = $state(setup.infiniteContra);
+  let slovenian = $state(setup.slovenian);
+  let bonuses = $state(setup.bonuses);
   let server = $state(getServerUrl());
   let code = $state('');
   let busy = $state(false);
@@ -25,8 +27,8 @@
     busy = true;
     error = '';
     try {
-      const value = Math.max(1, Math.floor(Number(winValue) || 1));
-      const room = await createRoom({ players, winKind, winValue: value, failSafeMinutes: null, infiniteContra, timers });
+      const value = winKind === 'none' ? 1 : Math.max(1, Math.floor(Number(winValue) || 1));
+      const room = await createRoom({ players, winKind, winValue: value, failSafeMinutes: null, infiniteContra, slovenian, bonuses, timers });
       saveToken(room.code, room.token);
       go('room', room.code);
     } catch {
@@ -69,14 +71,19 @@
         <option value="rounds">{t('setup.win.rounds')}</option>
         <option value="targetScore">{t('setup.win.target')}</option>
         <option value="timeLimit">{t('setup.win.time')}</option>
+        <option value="none">{t('setup.win.none')}</option>
       </select>
     </label>
-    <label class="field">
-      <span>{unit}</span>
-      <input type="number" inputmode="numeric" min="1" bind:value={winValue} />
-    </label>
+    {#if winKind !== 'none'}
+      <label class="field">
+        <span>{unit}</span>
+        <input type="number" inputmode="numeric" min="1" bind:value={winValue} />
+      </label>
+    {/if}
     <label class="check"><input type="checkbox" bind:checked={timers} /> {t('setup.timers')}</label>
     <label class="check"><input type="checkbox" bind:checked={infiniteContra} /> {t('setup.infiniteContra')}</label>
+    <label class="check"><input type="checkbox" bind:checked={slovenian} /> {t('setup.slovenian')}</label>
+    <label class="check"><input type="checkbox" bind:checked={bonuses} /> {t('setup.bonuses')}</label>
     <button class="btn primary" data-testid="create-room" disabled={busy} onclick={() => { create(); }}> {busy ? t('online.creating') : t('online.create')} </button>
   </section>
 

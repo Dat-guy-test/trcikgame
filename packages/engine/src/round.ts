@@ -7,7 +7,7 @@
  */
 import { SUITS, isTarock, points, suitCard, type CardId, type Suit } from './cards';
 import { deal } from './deal';
-import { outbids, outbidsOwnBid, leftBehind, type Bid } from './bidding';
+import { outbids, outbidsOwnBid, leftBehind, bidOptionsOf, type Bid } from './bidding';
 import { CONTRACTS, allowedBonuses, isNegative, valatAllowed, type ContractDef } from './contracts';
 import { finishForfeit, finishGaveUp, finishPlayed, finishReshuffle, finishTrischaken } from './evaluate';
 import type { BonusKind } from './scoring';
@@ -213,7 +213,8 @@ function finishBidding(s: RoundState): void {
   s.take = bid.take;
   s.declarer = s.bidder;
   s.declaredBonuses = [...bid.bonuses];
-  if (defOf(s).bonuses !== 'none') s.phase = 'declare';
+  // With bonuses switched off (match option) there is nothing to declare.
+  if (defOf(s).bonuses !== 'none' && s.config.bonuses !== false) s.phase = 'declare';
   else enterContra(s);
 }
 
@@ -233,10 +234,11 @@ function setBid(s: RoundState, seat: number, bid: Bid): void {
 
 function applyBidding(s: RoundState, actor: number, action: Action): void {
   const isSP = actor === s.config.startingPlayer;
+  const opts = bidOptionsOf(s.config);
   if (s.awaitingConfirm) {
     if (action.type === 'confirm') return finishBidding(s);
     const a = need(action, 'bid');
-    if (!outbidsOwnBid(s.currentBid!, a.bid, isSP)) illegal('a player may only raise their own bid to a higher value');
+    if (!outbidsOwnBid(s.currentBid!, a.bid, isSP, opts)) illegal('a player may only raise their own bid to a higher value');
     return setBid(s, actor, a.bid);
   }
   if (action.type === 'pass') {
@@ -248,7 +250,7 @@ function applyBidding(s: RoundState, actor: number, action: Action): void {
     return;
   }
   const a = need(action, 'bid');
-  if (!outbids(s.currentBid, a.bid, isSP)) illegal('bid does not outbid the current bid');
+  if (!outbids(s.currentBid, a.bid, isSP, opts)) illegal('bid does not outbid the current bid');
   setBid(s, actor, a.bid);
 }
 
@@ -466,12 +468,13 @@ export function legalActions(s: RoundState): LegalAction[] {
   switch (s.phase) {
     case 'bidding': {
       const isSP = actor === s.config.startingPlayer;
+      const opts = bidOptionsOf(s.config);
       if (s.awaitingConfirm) {
         add({ type: 'confirm' });
-        for (const bid of ALL_BIDS) if (outbidsOwnBid(s.currentBid!, bid, isSP)) add({ type: 'bid', bid: clone(bid) });
+        for (const bid of ALL_BIDS) if (outbidsOwnBid(s.currentBid!, bid, isSP, opts)) add({ type: 'bid', bid: clone(bid) });
       } else {
         add({ type: 'pass' });
-        for (const bid of ALL_BIDS) if (outbids(s.currentBid, bid, isSP)) add({ type: 'bid', bid: clone(bid) });
+        for (const bid of ALL_BIDS) if (outbids(s.currentBid, bid, isSP, opts)) add({ type: 'bid', bid: clone(bid) });
       }
       break;
     }

@@ -5,12 +5,16 @@
  * Flow: the client creates a room over HTTP (`POST /api/rooms` with RoomSettings), then opens the WebSocket and sends `join`.
  * The server answers `welcome` (with the secret token used to reconnect) and then pushes `lobby` or `state` after every change.
  * Clients send intents only; the server validates them and sends each client its own `HostView`, so hidden hands never cross the wire.
+ *
+ * Between rounds (score screen) a player may `propose` one match option change; every human player must `vote` yes within 60 s.
  */
-import type { Action, Bid, BonusKind, ContractId, ContraTarget, HostView, Suit } from '@tarok/engine';
+import type { Action, Bid, BonusKind, ContractId, ContraTarget, HostView, OptionChange, Suit } from '@tarok/engine';
 
 export const PROTOCOL_VERSION = 1;
 export const MAX_MESSAGE_CHARS = 4096;
 export const MAX_NAME = 20;
+
+export type { OptionChange };
 
 // ---------------------------------------------------------------------------------------------
 // Rooms
@@ -18,11 +22,16 @@ export const MAX_NAME = 20;
 export interface RoomSettings {
   /** Regular players including bots (2 to 8). Two players get two dummies, three get one. */
   players: number;
-  winKind: 'rounds' | 'targetScore' | 'timeLimit';
-  /** Rounds, points or minutes depending on `winKind`. */
+  /** `none` = no win condition (unlimited rounds). */
+  winKind: 'rounds' | 'targetScore' | 'timeLimit' | 'none';
+  /** Rounds, points or minutes depending on `winKind` (ignored for `none`). */
   winValue: number;
   failSafeMinutes: number | null;
   infiniteContra: boolean;
+  /** Slovenian method allowed in bidding. Missing = yes. */
+  slovenian?: boolean;
+  /** Bonuses enabled (declaring and scoring). Missing = yes. */
+  bonuses?: boolean;
   /** Time reserve per player (card viewing, bidding, play). Off = no clocks. */
   timers: boolean;
 }
@@ -44,13 +53,39 @@ const isInt = (x: unknown): x is number => typeof x === 'number' && Number.isInt
 
 export function validateSettings(x: unknown): RoomSettings | null {
   if (!isObj(x)) return null;
-  const { players, winKind, winValue, failSafeMinutes, infiniteContra, timers } = x;
+  const { players, winKind, winValue, failSafeMinutes, infiniteContra, timers, slovenian, bonuses } = x;
   if (!isInt(players) || players < 2 || players > 8) return null;
-  if (winKind !== 'rounds' && winKind !== 'targetScore' && winKind !== 'timeLimit') return null;
+  if (winKind !== 'rounds' && winKind !== 'targetScore' && winKind !== 'timeLimit' && winKind !== 'none') return null;
   if (!isInt(winValue) || winValue < 1 || winValue > 10_000) return null;
   if (failSafeMinutes !== null && (!isInt(failSafeMinutes) || failSafeMinutes < 1 || failSafeMinutes > 1000)) return null;
   if (typeof infiniteContra !== 'boolean' || typeof timers !== 'boolean') return null;
-  return { players, winKind, winValue, failSafeMinutes, infiniteContra, timers };
+  if (slovenian !== undefined && typeof slovenian !== 'boolean') return null;
+  if (bonuses !== undefined && typeof bonuses !== 'boolean') return null;
+  return {
+    players, winKind, winValue, failSafeMinutes, infiniteContra, timers,
+    ...(slovenian === undefined ? {} : { slovenian }),
+    ...(bonuses === undefined ? {} : { bonuses }),
+  };
+}
+
+/** Rebuilds a clean OptionChange from untrusted JSON, or null. */
+export function parseOptionChange(x: unknown): OptionChange | null {
+  if (!isObj(x)) return null;
+  const key = x.key;
+  switch (key) {
+    case 'slovenian':
+    case 'bonuses':
+    case 'infiniteContra':
+      return typeof x.value === 'boolean' ? { key, value: x.value } : null;
+    case 'win': {
+      const kind = x.kind;
+      if (kind !== 'rounds' && kind !== 'targetScore' && kind !== 'timeLimit' && kind !== 'none') return null;
+      if (!isInt(x.value) || x.value < 1 || x.value > 10_000) return null;
+      return { key: 'win', kind, value: x.value };
+    }
+    default:
+      return null;
+  }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -61,6 +96,10 @@ export type ClientMessage =
   | { t: 'act'; action: Action }
   | { t: 'ready' }
   | { t: 'next' }
+  /** Score screen only, human players only: propose changing one match option. */
+  | { t: 'propose'; change: OptionChange }
+  /** Answer to the running proposal. */
+  | { t: 'vote'; approve: boolean }
   /** Host only, lobby only: make a seat a bot or open it for a player. */
   | { t: 'slot'; index: number; kind: 'open' | 'bot' }
   /** Host only. */
@@ -126,6 +165,11 @@ export function parseClientMessage(raw: string): ClientMessage | null {
       const action = parseAction(x.action);
       return action ? { t: 'act', action } : null;
     }
+    case 'propose': {
+      const change = parseOptionChange(x.change);
+      return change ? { t: 'propose', change } : null;
+    }
+    case 'vote': return typeof x.approve === 'boolean' ? { t: 'vote', approve: x.approve } : null;
     case 'ready': return { t: 'ready' };
     case 'next': return { t: 'next' };
     case 'start': return { t: 'start' };
@@ -162,9 +206,25 @@ export interface LobbyMessage {
   slots: SlotInfo[];
 }
 
+/** The running option vote. Every human player has to approve; any rejection or the end of the time ends it. */
+export interface VoteInfo {
+  proposer: number;
+  change: OptionChange;
+  /** Time left when the message was sent. */
+  msLeft: number;
+  /** Participant -> answer so far. */
+  votes: Record<number, boolean>;
+}
+
+export interface VoteResult {
+  change: OptionChange;
+  passed: boolean;
+}
+
 export interface StateMessage {
   t: 'state';
   you: You;
+  /** The current room options (they change when a vote passes). */
   settings: RoomSettings;
   /** This participant's view of the game (hidden hands never appear in it). */
   view: HostView;
@@ -174,6 +234,10 @@ export interface StateMessage {
   connected: boolean[];
   /** Participants who pressed "next round". */
   nextVotes: number[];
+  /** The running option vote, if any. */
+  vote: VoteInfo | null;
+  /** Outcome of the last vote, shown until the next round starts. */
+  voteResult: VoteResult | null;
 }
 
 export type ErrorCode =

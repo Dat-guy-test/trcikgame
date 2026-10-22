@@ -7,7 +7,7 @@
 import type { CardId } from './cards';
 import type { MatchConfig } from './config';
 import { IllegalAction, apply, newRound, type Action } from './round';
-import { nextStartingPlayer, type RoundResult, type RoundState, type SeatKind } from './state';
+import { nextStartingPlayer, regularSeatsFrom, type RoundResult, type RoundState, type SeatKind } from './state';
 
 export interface Placing {
   /** Participant index (equal to the seat with 4 or fewer players). */
@@ -17,10 +17,15 @@ export interface Placing {
   place: number;
 }
 
+/** The match options that may change between rounds. */
+export type MatchOptions = Pick<MatchConfig, 'slovenian' | 'bonuses' | 'infiniteContra' | 'winCondition'>;
+
 export type MatchEvent =
   | { type: 'roundStarted'; index: number; startingPlayer: number; seed: number; table: number[] }
   | { type: 'action'; actor: number; action: Action }
   | { type: 'roundFinished'; index: number; deltas: number[] }
+  | { type: 'optionsChanged'; patch: Partial<MatchOptions> }
+  | { type: 'seatKind'; participant: number; kind: SeatKind }
   | { type: 'timeExpired'; reason: 'timeLimit' | 'failSafe' }
   | { type: 'matchFinished'; winners: number[] };
 
@@ -121,7 +126,10 @@ export function createMatch(config: MatchConfig, seed: number, firstStartingPlay
   const startingPlayer = firstStartingPlayer ?? seatKinds.indexOf('player');
   const roundSeed = deriveRoundSeed(seed, 0);
   const cfg = JSON.parse(JSON.stringify(config)) as MatchConfig;
-  const round = newRound({ seatKinds, startingPlayer, seed: roundSeed, infiniteContra: cfg.infiniteContra, deck });
+  const round = newRound({
+    seatKinds, startingPlayer, seed: roundSeed, infiniteContra: cfg.infiniteContra,
+    slovenian: cfg.slovenian, bonuses: cfg.bonuses, deck,
+  });
   const table = [0, 1, 2, 3];
   const queue = participantKinds.map((_, i) => i).slice(4);
   return {
@@ -161,7 +169,7 @@ function shouldFinish(m: MatchState): boolean {
     const second = p[1];
     return top.score >= wc.target && (second === undefined || second.score < top.score);
   }
-  return false;
+  return false; // time limit (handled by addElapsed) or no win condition
 }
 
 function settle(m: MatchState): MatchState {
@@ -194,16 +202,62 @@ export function matchApply(m: MatchState, actor: number, action: Action): MatchS
   return round.phase === 'done' ? settle(next) : next;
 }
 
+/**
+ * Changes match options between rounds (they apply from the next round on). Used by the online vote.
+ * A new win condition is checked after the next round is settled, not retroactively.
+ */
+export function matchSetOptions(m: MatchState, patch: Partial<MatchOptions>): MatchState {
+  if (m.finished) throw new IllegalAction('the match is over');
+  if (m.round.phase !== 'done') throw new IllegalAction('options can only change between rounds');
+  const config: MatchConfig = { ...m.config, ...patch };
+  validateWinCondition(config);
+  return { ...m, config, log: [...m.log, { type: 'optionsChanged', patch }] };
+}
+
+/** Nobody has made a decision in the current round yet (nobody has bid or passed). */
+export function roundHasNoDecision(r: RoundState): boolean {
+  return r.phase === 'bidding' && r.currentBid === null && r.toAct.length === regularSeatsFrom(r.config, r.config.startingPlayer).length;
+}
+
+/**
+ * Turns a participant's seat into a dummy or back into a regular player. Allowed between rounds, and in the current round
+ * as long as nobody has made a decision in the bidding. Not available with more than 4 regular players (no dummies there).
+ * The participant keeps their standings entry.
+ */
+export function matchSetParticipantKind(m: MatchState, participant: number, kind: SeatKind): MatchState {
+  if (m.finished) throw new IllegalAction('the match is over');
+  if (m.config.regularPlayers > 4) throw new IllegalAction('seats cannot change with more than 4 players');
+  if (m.participantKinds[participant] === undefined) throw new IllegalAction('unknown participant');
+  if (m.participantKinds[participant] === kind) return m;
+  const seat = m.table.indexOf(participant);
+  if (seat < 0) throw new IllegalAction('participant is not at the table');
+  const seatKinds = m.seatKinds.map((k, i) => (i === seat ? kind : k));
+  if (seatKinds.filter((k) => k === 'player').length < 2) throw new IllegalAction('at least 2 regular players are required');
+  const participantKinds = m.participantKinds.map((k, i) => (i === participant ? kind : k));
+  let round = m.round;
+  if (round.phase !== 'done') {
+    if (!roundHasNoDecision(round)) throw new IllegalAction('too late to change a seat in this round');
+    const cfg = { ...round.config, seatKinds: [...seatKinds] };
+    if (cfg.seatKinds[cfg.startingPlayer] !== 'player') throw new IllegalAction('the starting player must be a regular player');
+    round = { ...round, config: cfg, toAct: regularSeatsFrom(cfg, cfg.startingPlayer) };
+  }
+  return { ...m, seatKinds, participantKinds, round, log: [...m.log, { type: 'seatKind', participant, kind }] };
+}
+
 /** Starts the next round (starting player rotates, skipping dummies). Only between rounds. */
 export function nextRound(m: MatchState, deck?: CardId[]): MatchState {
   if (m.finished) throw new IllegalAction('the match is over');
   if (m.round.phase !== 'done') throw new IllegalAction('the current round is still running');
   const index = m.roundIndex + 1;
-  // A reshuffled deal is dealt again with the same starting player.
+  // A reshuffled deal is dealt again with the same starting player (unless that seat has become a dummy).
   const reshuffled = m.round.result?.kind === 'reshuffle';
-  const startingPlayer = reshuffled ? m.round.config.startingPlayer : nextStartingPlayer(m.seatKinds, m.round.config.startingPlayer);
+  const previous = m.round.config.startingPlayer;
+  const startingPlayer = reshuffled && m.seatKinds[previous] === 'player' ? previous : nextStartingPlayer(m.seatKinds, previous);
   const seed = deriveRoundSeed(m.seed, index);
-  const round = newRound({ seatKinds: m.seatKinds, startingPlayer, seed, infiniteContra: m.config.infiniteContra, deck });
+  const round = newRound({
+    seatKinds: m.seatKinds, startingPlayer, seed, infiniteContra: m.config.infiniteContra,
+    slovenian: m.config.slovenian, bonuses: m.config.bonuses, deck,
+  });
   // More than 4 players: the player in seat (finished round % 4) goes to the back of the queue, the first spectator takes the seat.
   const table = [...m.table];
   const queue = [...m.queue];
@@ -249,6 +303,8 @@ export function replayMatch(config: MatchConfig, seed: number, log: readonly Mat
   for (const e of log) {
     if (e.type === 'action') m = matchApply(m, e.actor, e.action);
     else if (e.type === 'roundStarted' && e.index > 0) m = nextRound(m);
+    else if (e.type === 'optionsChanged') m = matchSetOptions(m, e.patch);
+    else if (e.type === 'seatKind') m = matchSetParticipantKind(m, e.participant, e.kind);
     else if (e.type === 'timeExpired') m = expire(m, e.reason);
   }
   return m;

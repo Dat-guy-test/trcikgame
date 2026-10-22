@@ -3,7 +3,7 @@
  * Mirrors `legalActions` / `isValidTake` / `isValidDiscard` in round.ts (a property test keeps them equal).
  */
 import { SUITS, isTarock, points, type CardId } from './cards';
-import { leftBehind, outbids, outbidsOwnBid, type Bid } from './bidding';
+import { bidOptionsOf, leftBehind, outbids, outbidsOwnBid, type Bid } from './bidding';
 import { CONTRACTS, allowedBonuses, isNegative, valatAllowed } from './contracts';
 import type { Action, LegalAction } from './round';
 import type { BonusKind } from './scoring';
@@ -84,12 +84,13 @@ export function legalActionsFromView(v: RoundView): LegalAction[] {
   switch (v.phase) {
     case 'bidding': {
       const isSP = actor === v.startingPlayer;
+      const opts = bidOptionsOf(v);
       if (v.awaitingConfirm) {
         add({ type: 'confirm' });
-        for (const bid of ALL_BIDS) if (outbidsOwnBid(v.currentBid!, bid, isSP)) add({ type: 'bid', bid: clone(bid) });
+        for (const bid of ALL_BIDS) if (outbidsOwnBid(v.currentBid!, bid, isSP, opts)) add({ type: 'bid', bid: clone(bid) });
       } else {
         add({ type: 'pass' });
-        for (const bid of ALL_BIDS) if (outbids(v.currentBid, bid, isSP)) add({ type: 'bid', bid: clone(bid) });
+        for (const bid of ALL_BIDS) if (outbids(v.currentBid, bid, isSP, opts)) add({ type: 'bid', bid: clone(bid) });
       }
       break;
     }

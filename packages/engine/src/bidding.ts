@@ -10,6 +10,19 @@ export interface Bid {
   bonuses: readonly BonusKind[];
 }
 
+/** Match options that change which bids exist. Undefined means enabled. */
+export interface BidOptions {
+  /** Slovenian method: bidding with fewer Talon cards. */
+  slovenian?: boolean;
+  /** Bonuses. Without them Besser Rufer (which needs a declared bonus) cannot be bid. */
+  bonuses?: boolean;
+}
+
+export const bidOptionsOf = (c: { slovenian?: boolean; bonuses?: boolean }): BidOptions => ({
+  slovenian: c.slovenian !== false,
+  bonuses: c.bonuses !== false,
+});
+
 export function bidValue(b: Bid): number {
   const def = CONTRACTS[b.contract];
   if (!def.needsBonusDeclaration) return def.value;
@@ -21,15 +34,17 @@ export function defaultBid(contract: ContractId): Bid {
 }
 
 /** Returns an error code, or null if the bid is well-formed for this player. */
-export function validateBid(b: Bid, isStartingPlayer: boolean): string | null {
+export function validateBid(b: Bid, isStartingPlayer: boolean, opts: BidOptions = {}): string | null {
   const def = CONTRACTS[b.contract];
   if (!def.biddable) return 'not_biddable';
+  if (opts.bonuses === false && def.needsBonusDeclaration) return 'not_biddable';
   if (def.starterOnly && !isStartingPlayer) return 'starting_player_only';
   if (def.take === 0) {
     if (b.take !== 0) return 'invalid_take';
   } else if (!Number.isInteger(b.take) || b.take < 1 || b.take > def.take) {
     return 'invalid_take';
   }
+  if (opts.slovenian === false && def.take > 0 && b.take !== def.take) return 'invalid_take';
   if (def.needsBonusDeclaration) {
     if (b.bonuses.length === 0) return 'bonus_declaration_required';
     const allowed = allowedBonuses(def);
@@ -47,8 +62,8 @@ export function validateBid(b: Bid, isStartingPlayer: boolean): string | null {
  * The confirming last bidder may only raise to a strictly higher *value*; the caller enforces
  * that by using `outbidsOwnBid` instead.
  */
-export function outbids(current: Bid | null, candidate: Bid, isStartingPlayer: boolean): boolean {
-  if (validateBid(candidate, isStartingPlayer) !== null) return false;
+export function outbids(current: Bid | null, candidate: Bid, isStartingPlayer: boolean, opts: BidOptions = {}): boolean {
+  if (validateBid(candidate, isStartingPlayer, opts) !== null) return false;
   if (current === null) return true;
 
   const vNew = bidValue(candidate);
@@ -65,8 +80,8 @@ export function outbids(current: Bid | null, candidate: Bid, isStartingPlayer: b
 }
 
 /** The last bidder re-raising their own bid: strictly higher value only. */
-export function outbidsOwnBid(current: Bid, candidate: Bid, isStartingPlayer: boolean): boolean {
-  return validateBid(candidate, isStartingPlayer) === null && bidValue(candidate) > bidValue(current);
+export function outbidsOwnBid(current: Bid, candidate: Bid, isStartingPlayer: boolean, opts: BidOptions = {}): boolean {
+  return validateBid(candidate, isStartingPlayer, opts) === null && bidValue(candidate) > bidValue(current);
 }
 
 /**
