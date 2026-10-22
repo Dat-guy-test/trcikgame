@@ -157,7 +157,12 @@ export class RoomCore {
   // ----- connections -----
 
   connect(id: string): void {
-    if (this.conns.size === 0) this.lastTick = this.env.now(); // nobody was here: do not charge the quiet time
+    if (this.conns.size === 0) {
+      // nobody was here: do not charge the quiet time (clocks) and do not let it use up a running vote
+      const now = this.env.now();
+      this.lastTick = now;
+      if (this.data.vote) this.data.vote.deadline += Math.max(0, now - this.data.touched);
+    }
     this.conns.set(id, { participant: null, owner: false, joined: false });
     this.touch();
   }
@@ -179,7 +184,7 @@ export class RoomCore {
     this.advance();
     this.afterHostChange();
     const msg = parseClientMessage(raw);
-    if (!msg) return this.error(id, 'bad_message', 'Invalid message');
+    if (!msg) return this.error(id, 'bad_message', this.describeBad(raw));
     if (msg.t === 'ping') return this.io.send(id, { t: 'pong' });
     if (msg.t === 'join') return this.join(id, conn, msg);
     if (!conn.joined) return this.error(id, 'bad_message', 'Join first');
@@ -197,6 +202,19 @@ export class RoomCore {
       if (e instanceof IllegalAction) this.error(id, 'illegal', e.message);
       else this.error(id, 'bad_message', 'Could not apply that');
     }
+  }
+
+  /** Why a message was rejected, for the error shown to the player. */
+  private describeBad(raw: string): string {
+    try {
+      const x: unknown = JSON.parse(raw);
+      const t = typeof x === 'object' && x !== null ? (x as { t?: unknown }).t : undefined;
+      if (t === 'propose') return 'Invalid option change';
+      if (t === 'vote') return 'Invalid vote';
+    } catch {
+      /* not JSON */
+    }
+    return 'Invalid message';
   }
 
   // ----- join -----
@@ -388,6 +406,7 @@ export class RoomCore {
     const d = this.data;
     if (h.stage !== 'betweenRounds') return this.error(id, 'illegal', 'Options can only be changed between rounds');
     if (!this.humansOf(h).includes(conn.participant!)) return this.error(id, 'illegal', 'Only players can propose changes');
+    if (h.match.finished) return this.error(id, 'illegal', 'The match is over');
     if (d.vote) return this.error(id, 'illegal', 'A vote is already running');
     if (!differs(d.settings, change)) return this.error(id, 'illegal', 'The option already has that value');
     d.vote = { proposer: conn.participant!, change, deadline: this.env.now() + VOTE_MS, votes: { [conn.participant!]: true } };

@@ -10,7 +10,8 @@
  */
 import type { Action, Bid, BonusKind, ContractId, ContraTarget, HostView, OptionChange, Suit } from '@tarok/engine';
 
-export const PROTOCOL_VERSION = 1;
+/** 2: option votes (`propose` / `vote`). An older server answers `bad_version` instead of failing on the new messages. */
+export const PROTOCOL_VERSION = 2;
 export const MAX_MESSAGE_CHARS = 4096;
 export const MAX_NAME = 20;
 
